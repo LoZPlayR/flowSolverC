@@ -50,7 +50,7 @@ int main(void){
             if (MAX_DEPTH != -1 && count > MAX_DEPTH) break;
         #endif
 
-        // Check if the board is full
+        // Check if the board is full/solved
         if (depth >= area - n && is_solved(stack[depth].board)) {
             printf("solved!\n");
             break;
@@ -81,6 +81,11 @@ int main(void){
                 #if DEBUG
                     printf("Out of moves! Moving up a level...\n");
                 #endif
+                if (depth == 0){
+                    printf("No solution! Or serious error??\n");
+                    return 0;
+                }
+
                 stack[depth].num_moves = -1;
                 depth--;
                 break;

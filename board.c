@@ -35,6 +35,10 @@ bool loc_is_valid(board_location_t loc){
     return loc != NO_LOC;
 }
 
+bool loc_is_valid_internal(board_t* board, board_location_t loc){
+    return loc >= 0 && loc < board->width * board->height;
+}
+
 /*
     Given a board type and a coordinate, return the corresponding board_location_t
 
@@ -54,6 +58,7 @@ board_location_t get_loc(board_t* board, int x, int y){
     Given a board and a board_location return the board_location one spot up
 */
 board_location_t get_loc_up(board_t* board, board_location_t loc){
+    if (!loc_is_valid_internal(board, loc)) return NO_LOC;
     int _loc = (int) loc;
     return (_loc < board->width) ? NO_LOC : _loc - board->width;
 }
@@ -62,14 +67,16 @@ board_location_t get_loc_up(board_t* board, board_location_t loc){
     Given a board and a board_location return the board_location one spot down
 */
 board_location_t get_loc_down(board_t* board, board_location_t loc){
+    if (!loc_is_valid_internal(board, loc)) return NO_LOC;
     int _loc = (int) loc;
-    return (_loc  > (board->height - 1) * board->width) ? NO_LOC : _loc + board->width;
+    return (_loc  >= (board->height - 1) * board->width) ? NO_LOC : _loc + board->width;
 }
 
 /*
     Given a board and a board_location return the board_location one spot left
 */
 board_location_t get_loc_left(board_t* board, board_location_t loc){
+    if (!loc_is_valid_internal(board, loc)) return NO_LOC;
     int _loc = (int) loc;
     return (_loc % board->width == 0) ? NO_LOC : _loc - 1;
 }
@@ -78,6 +85,7 @@ board_location_t get_loc_left(board_t* board, board_location_t loc){
     Given a board and a board_location return the board_location one spot right
 */
 board_location_t get_loc_right(board_t* board, board_location_t loc){
+    if (!loc_is_valid_internal(board, loc)) return NO_LOC;
     int _loc = (int) loc;
     return (_loc % board->width == board->width - 1) ? NO_LOC : _loc + 1;
 }

@@ -26,7 +26,7 @@ void set_location_visited(dfs_visited_t visited, board_location_t loc){
 dfs_visited_t create_visited(int width, int height){
     int area = width * height;
 
-    dfs_visited_t visited = malloc(sizeof(uint32_t) * (1 + (area / 32)));
+    dfs_visited_t visited = calloc(1 + (area / 32), sizeof(uint32_t));
 
     return visited;
 }
@@ -54,22 +54,26 @@ bool dfs(board_t* board, dfs_visited_t visited, board_location_t loc, enum COLOR
     // And checks the adjacent locations (if edge exists and not visited)
     // Also added short circuiting
     board_location_t up = get_loc_up(board, loc);
-    if (!is_location_visited(visited, up) && node_up_edge(curr_node)){
+    if (loc_is_valid(up) && !is_location_visited(visited, up) && 
+        node_up_edge(curr_node)){
         if (dfs(board, visited, up, col)) return true;
     }
 
     board_location_t down = get_loc_down(board, loc);
-    if (!is_location_visited(visited, down) && node_down_edge(curr_node)){
+    if (loc_is_valid(down) && !is_location_visited(visited, down) && 
+        node_down_edge(curr_node)){
         if (dfs(board, visited, down, col)) return true;
     }
 
     board_location_t left = get_loc_left(board, loc);
-    if (!is_location_visited(visited, left) && node_left_edge(curr_node)){
+    if (loc_is_valid(left) && !is_location_visited(visited, left) && 
+        node_left_edge(curr_node)){
         if (dfs(board, visited, left, col)) return true;
     }
 
     board_location_t right = get_loc_right(board, loc);
-    if (!is_location_visited(visited, right) && node_right_edge(curr_node)){
+    if (loc_is_valid(right) && !is_location_visited(visited, right) 
+        && node_right_edge(curr_node)){
         if (dfs(board, visited, right, col)) return true;
     }
 

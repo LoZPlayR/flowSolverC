@@ -13,7 +13,7 @@ all:
 
 debug:
 	@echo "Making debug"
-	${CC} -o flowsolver ${SRCS} -g
+	${CC} -o flowsolver ${SRCS} -fsanitize=address -g
 
 # %: %.o
 # 	@echo "Checking.."
