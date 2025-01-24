@@ -2,6 +2,8 @@
 
 const int MAX_DEPTH = 25;
 
+
+
 /*  Some notes:
     The max stack size is the area of the board.
     TODO: Set up evaluation

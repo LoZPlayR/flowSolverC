@@ -8,12 +8,28 @@ SRCS := $(wildcard *.c)
 BINS := $(SRCS:%.c=%)
 
 all: 
-	@echo "Making everything..."
-	${CC} -o flowsolver ${SRCS} -O3
+	@echo "Making Flow Solver"
+#	${CC} -o flowsolver ${SRCS} -O3
+	gcc -o flowsolver board.c eval.c gen_moves.c levelpack.c solver.c -O3
+
+	@echo "Making Level Editor"
+	gcc -o leveleditor leveleditor.c levelpack.c -O3 -lncurses
 
 debug:
-	@echo "Making debug"
-	${CC} -o flowsolver ${SRCS} -fsanitize=address -g
+	@echo "Making debug flow solver"
+#	${CC} -o flowsolver ${SRCS} -fsanitize=address -g
+	gcc -o flowsolver board.c eval.c gen_moves.c levelpack.c solver.c -O0 -fsanitize=address -g
+
+	@echo "Making debug level editor"
+	gcc -o leveleditor leveleditor.c levelpack.c -O0 -fsanitize=address -g -lncurses
+
+solver:
+	@echo "Making Flow Solver"
+	gcc -o flowsolver board.c eval.c gen_moves.c levelpack.c solver.c -O3
+
+editor:
+	@echo "Making Level Editor"
+	gcc -o leveleditor leveleditor.c levelpack.c -O3 -lncurses
 
 # %: %.o
 # 	@echo "Checking.."

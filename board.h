@@ -3,7 +3,10 @@
 
 #include "util.h"
 
-enum COLOR {EMPTY = -1, RED = 0, GREEN = 1, BLUE = 2};
+enum COLOR {EMPTY = -1, RED = 0, GREEN = 1, BLUE = 2, 
+            YELLOW = 3, ORANGE = 4, CYAN = 5, MAGENTA = 6, 
+            MAROON = 7, PURPLE = 8, WHITE = 9, GREY = 10, 
+            LIME = 11, TAN = 12, INDIGO = 13, AQUA = 14, PINK = 15};
 
 // defines a specific location on the board
 typedef uint16_t board_location_t;

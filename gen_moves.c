@@ -1,33 +1,7 @@
 #include "gen_moves.h"
 
-// generate all possible lines
-
-// if a node is colored - it is visited
-// We want to explore all edges of all nodes.
-// So, we record where we have visited as we progress.
-// Effectively, all edges start as unvisited
-// Once we explore all possible moves from that edge (given the previous line), then we mark the edge as a wall.
-// If a node has no valid edges, reset the edges and move back to the previous node
-// Mark the edge in the previous node as a wall
-// Check other edges
-// If we traverse to the other source node, we run a line evaluation
-// Eventually, we will also run segment evaluations too, but for now, brute force will do
-// Once the OG source node has no edges, we have tried all possibilities
-
-// Issues with this implementation:
-// No concept of a 'line' - would be good to save 'best' moves at some point
-// Issue: how to backtrack? -> Add line concept. Line is a linked list with node pointer and next pointer
-// Now lines nodes are small - either 2 pointers or an index and a pointer. 
-
-// So the maximum number of moves from a single chess position is <300. This is a very small number compared to the total number of lines possible
-// from a single board. 
-
 // New idea: each segment added is a move. Then we can try to add to any segment. Generating moves includes generating all possible moves from the current
 // head of each line. 
-
-// Okay.. so currently move_t includes pointers to the old and new nodes. Is this necessary?
-// I could just save indices and then I wouldn't need to have any pointers
-// Also, it doesn't make sense to use pointers for this since I don't need to reference back to the old node in the old board.
 
 // TODO: Make faster operations that do not require going thru the node type
 

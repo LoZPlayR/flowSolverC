@@ -342,6 +342,68 @@ enum DIRECTION get_dir_between_nodes(board_t* board, board_location_t loc1, boar
     // fuck it one liner
     return (ind1 > ind2) ? ((ind2 == (ind1 - 1)) ? LEFT : UP) : ((ind1 == (ind2 - 1)) ? RIGHT : DOWN);
 }
+/*
+    Sets the text color depending on col
+*/
+void set_text_color(enum COLOR col){
+    switch (col){
+    case RED:
+        printf("\033[38;2;234;51;35m");
+    break;
+    case GREEN:
+        printf("\033[38;2;61;139;38m");
+    break;
+    case BLUE:
+        printf("\033[38;2;20;41;245m");             
+    break;
+    case YELLOW:
+        printf("\033[38;2;231;223;73m");
+    break;
+    case ORANGE:
+        printf("\033[38;2;235;142;52m");
+    break;
+    case CYAN:
+        printf("\033[38;2;116;251;253m");
+    break;
+    case MAGENTA:
+        printf("\033[38;2;232;54;196m");
+    break;
+    case MAROON:
+        printf("\033[38;2;151;51;47m");
+    break;
+    case PURPLE:
+        printf("\033[38;2;117;20;122m");
+    break;
+    case WHITE:
+        printf("\033[38;2;255;255;255m");
+    break;
+    case GREY:
+        printf("\033[38;2;158;160;187m");
+    break;
+    case LIME:
+        printf("\033[38;2;117;251;76m");
+    break;
+    case TAN:
+        printf("\033[38;2;158;137;89m");
+    break;
+    case INDIGO:
+        printf("\033[38;2;50;41;171m");
+    break;
+    case AQUA:
+        printf("\033[38;2;54;125;125m");
+    break;
+    case PINK:
+        printf("\033[38;2;234;131;231m");
+    break;
+    default:
+        printf("\033[0;37m");
+    break;
+    }
+}
+
+void reset_text_color(){
+    printf("\033[0;37m");
+}
 
 // Print a board as nicely as possible
 // TODO: Make it display an accurate board instead of an array of numbers. for corners, 
@@ -354,67 +416,103 @@ void print_board(board_t* board){
         printf("Implement print larger board\n");
     } else {
         // print top bar
-        printf("•");
+        printf("╔");
         for (int i = 0; i < board->width; i++){
-            printf("=-=");
+            printf("══");
         }
-        printf("•\n");
+        printf("═╗\n");
 
         // print nodes
         for (int j = 0; j < board->height; j++){
-            printf("|");
+            printf("║");
             for (int i = 0; i < board->width; i++){
                 board_location_t curr = get_loc(board, i, j);
+                enum COLOR col = get_node_color(get_node_at_loc(board, curr));
+
+                if (col == EMPTY) {
+                    printf("  ");
+                    continue;
+                }
                 
                 #if BOARD_PRINT_TYPE == 0
-                    enum COLOR c_node = get_node_at_loc(board, curr).color;
-                    switch (c_node)
-                    {
-                    case RED:
-                        printf("\033[0;31m");
-                    break;
-                    case GREEN:
-                        printf("\033[0;32m");
-                    break;
-                    case BLUE:
-                        printf("\033[0;34m");               
-                    break;
-                    default:
-                        printf("\033[0;37m");
-                    break;
-                    }
-                    printf(c_node == EMPTY ? "   " : " %d ", c_node);
-                    printf("\033[0;37m");
+                    set_text_color(col);
+                    printf(" %d ", col);
+                    reset_text_color();
                 #elif BOARD_PRINT_TYPE == 1
-                    printf("use these [•⌝⌟⌜⌞|-] ");
-                    printf("1 needs to be reimplemented\n");
+                    #define UP_MASK 1
+                    #define DOWN_MASK 2
+                    #define LEFT_MASK 4
+                    #define RIGHT_MASK 8
+                    // Need to reimplement using a new method. I will check all 4 edges.
+                    // There can be 0-2 edges with the same color. Depending on the arrangement,
+                    // I will use a switch statement to draw the correct piece
+
+                    uint8_t result = 0;
+                    if (get_node_color(get_node_up(board, curr)) == col) result |= UP_MASK;
+                    if (get_node_color(get_node_down(board, curr)) == col) result |= DOWN_MASK;
+                    if (get_node_color(get_node_left(board, curr)) == col) result |= LEFT_MASK;
+                    if (get_node_color(get_node_right(board, curr)) == col) result |= RIGHT_MASK;
+
+                    set_text_color(col);
+                    switch (result)
+                    {
+                    case 0: // Lone node
+                        printf(" ⏺");
                     break;
 
-                    int prev = get_node_at_loc(board, curr)->prev;
+                    // Lone nodes - assume start/end sources
+                    case UP_MASK:
+                        printf(" ⏺");
+                    break;
+                    case DOWN_MASK:
+                        printf(" ⏺");
+                    break;
+                    case LEFT_MASK:
+                        printf("━⏺");
+                    break;
+                    case RIGHT_MASK:
+                        printf(" ⏺");
+                    break;
 
-                    if (prev == NO_PREV) {
-                        printf(" • ");
-                        continue;
+                    // All possible pairs
+                    case UP_MASK | DOWN_MASK:
+                        printf(" ┃");
+                    break;
+                    case UP_MASK | LEFT_MASK:
+                        printf("━┛");
+                    break;
+                    case UP_MASK | RIGHT_MASK:
+                        printf(" ┗");
+                    break;
+                    case DOWN_MASK | LEFT_MASK:
+                        printf("━┓");
+                    break;
+                    case DOWN_MASK | RIGHT_MASK:
+                        printf(" ┏");
+                    break;
+                    case LEFT_MASK | RIGHT_MASK:
+                        printf("━━");
+                    break;
+
+                    // Probably wrong
+                    default: 
+                        printf(" ? ");
+                    break;
                     }
-                    
-                    if (prev < curr){ // left or up
-                        printf(prev == curr - 1 ? " < " : " ^ ");
-                    } else { // down or right
-                        printf(prev == curr + 1 ? " > " : " v ");
-                    }
+                    reset_text_color();  
                 #else
-                    printf(" 2 is unimplemented\n");
+                    printf("Unimplemented\n");
                     break;
                 #endif
             }
-            printf("|\n");
+            printf(" ║\n");
         }
 
         // print bottom bar
-        printf("•");
+        printf("╚");
         for (int i = 0; i < board->width; i++){
-            printf("=-=");
+            printf("══");
         }
-        printf("•\n");
+        printf("═╝\n");
     }
 }

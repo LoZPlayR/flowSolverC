@@ -17,10 +17,9 @@ enum DIRECTION { UP, DOWN, LEFT, RIGHT };
 /*
     Determines the board print type
     0 - Numbers corresponding to color
-    1 - Arrows for indicating previous node
-    2 - Lines imitating the original game
+    1 - Lines imitating the original game
 */
-#define BOARD_PRINT_TYPE 0
+#define BOARD_PRINT_TYPE 1
 
 // TODO: Make a debug print function
 
