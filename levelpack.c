@@ -194,6 +194,7 @@ bool load_level_pack(level_pack_t* lp, char* filename){
     level_pack_header_t* lph = malloc(sizeof(level_pack_header_t));
     fread(lph, sizeof(level_pack_header_t), 1, curr_file);
     lp->num_levels = lph->num_levels;
+    
     free(lph);
 
     // Initialize memory for all levels.
@@ -255,5 +256,6 @@ bool load_level_pack(level_pack_t* lp, char* filename){
             offset++;
         }
     }
+    fclose(curr_file);
     return true;
 }

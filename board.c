@@ -238,51 +238,46 @@ void add_source_node(board_t* board, enum COLOR col, board_location_t loc){
 
     TODO: Make it take parameters
 */
-board_t* create_board(void){
-    int height = 5;
-    int width = 5;
-    int n = 3;
+void create_board(unsolved_board_t b, board_t* board){
+    board->width = b.width;
+    board->height = b.height;
+    board->n = b.n;
 
-    board_t* board = malloc(sizeof(board_t));
-
-    board->width = width;
-    board->height = height;
-    board->n = n;
-
-    board->nodes = malloc(sizeof(board_node_t) * width * height);
+    board->nodes = malloc(sizeof(board_node_t) * b.width * b.height);
 
     // Make nodes and add walls
-    for (int j = 0; j < height; j++){
-        for (int i = 0; i < width; i++){
-            board_node_t* curr = &board->nodes[j * width + i];
+    for (int j = 0; j < b.height; j++){
+        for (int i = 0; i < b.width; i++){
+            board_node_t* curr = &board->nodes[j * b.width + i];
             curr->color = EMPTY;
             curr->up = j == 0 ? false : true;
-            curr->down = j == (height - 1) ? false : true;
+            curr->down = j == (b.height - 1) ? false : true;
             curr->left = i == 0 ? false : true;
-            curr->right = i == (width - 1) ? false : true;
+            curr->right = i == (b.width - 1) ? false : true;
         }
     }
 
-    board->sources = malloc(sizeof(board_location_t) * n * 2);
+    board->sources = malloc(sizeof(board_location_t) * b.n * 2);
 
     // Mark every other source as unused 
-    for (int i = 0; i < n; i++){
+    for (int i = 0; i < b.n; i++){
         board->sources[2 * i] = (board_location_t) -1;
         board->sources[2 * i + 1] = (board_location_t) 0;
     }
 
     // Add more walls here lmao
+    
 
-    // Add source nodes here
-    // Temp: Bonus Levels -> 5x5 - easy -> 19
-    add_source_node(board, RED, 1 * width + 1);
-    add_source_node(board, RED, 1 * width + 3);
-    add_source_node(board, GREEN, 0 * width + 4);
-    add_source_node(board, GREEN, 2 * width + 2);
-    add_source_node(board, BLUE, 1 * width + 4);
-    add_source_node(board, BLUE, 0 * width + 1);
+    // Add source nodes
+    for (int i = 0; i < b.n; i++){
+        int y1 = b.positions[4 * i];
+        int x1 = b.positions[4 * i + 1];
+        int y2 = b.positions[4 * i + 2];
+        int x2 = b.positions[4 * i + 3];
 
-    return board;
+        add_source_node(board, i, y1 * b.width + x1);
+        add_source_node(board, i, y2 * b.width + x2);
+    }
 }
 
 void destroy_board(board_t* board){
@@ -406,113 +401,105 @@ void reset_text_color(){
 }
 
 // Print a board as nicely as possible
-// TODO: Make it display an accurate board instead of an array of numbers. for corners, 
-// using - | \ / and •. Bonus points if we can bold? ⌝⌟⌜⌞ are also available
-// Use * for temporary head?
 void print_board(board_t* board){
-    // Assume 16 colors max
-    // 2-wide case
-    if (board->n > 8){ // 9 colors + empty
-        printf("Implement print larger board\n");
-    } else {
-        // print top bar
-        printf("╔");
-        for (int i = 0; i < board->width; i++){
-            printf("══");
-        }
-        printf("═╗\n");
-
-        // print nodes
-        for (int j = 0; j < board->height; j++){
-            printf("║");
-            for (int i = 0; i < board->width; i++){
-                board_location_t curr = get_loc(board, i, j);
-                enum COLOR col = get_node_color(get_node_at_loc(board, curr));
-
-                if (col == EMPTY) {
-                    printf("  ");
-                    continue;
-                }
-                
-                #if BOARD_PRINT_TYPE == 0
-                    set_text_color(col);
-                    printf(" %d ", col);
-                    reset_text_color();
-                #elif BOARD_PRINT_TYPE == 1
-                    #define UP_MASK 1
-                    #define DOWN_MASK 2
-                    #define LEFT_MASK 4
-                    #define RIGHT_MASK 8
-                    // Need to reimplement using a new method. I will check all 4 edges.
-                    // There can be 0-2 edges with the same color. Depending on the arrangement,
-                    // I will use a switch statement to draw the correct piece
-
-                    uint8_t result = 0;
-                    if (get_node_color(get_node_up(board, curr)) == col) result |= UP_MASK;
-                    if (get_node_color(get_node_down(board, curr)) == col) result |= DOWN_MASK;
-                    if (get_node_color(get_node_left(board, curr)) == col) result |= LEFT_MASK;
-                    if (get_node_color(get_node_right(board, curr)) == col) result |= RIGHT_MASK;
-
-                    set_text_color(col);
-                    switch (result)
-                    {
-                    case 0: // Lone node
-                        printf(" ⏺");
-                    break;
-
-                    // Lone nodes - assume start/end sources
-                    case UP_MASK:
-                        printf(" ⏺");
-                    break;
-                    case DOWN_MASK:
-                        printf(" ⏺");
-                    break;
-                    case LEFT_MASK:
-                        printf("━⏺");
-                    break;
-                    case RIGHT_MASK:
-                        printf(" ⏺");
-                    break;
-
-                    // All possible pairs
-                    case UP_MASK | DOWN_MASK:
-                        printf(" ┃");
-                    break;
-                    case UP_MASK | LEFT_MASK:
-                        printf("━┛");
-                    break;
-                    case UP_MASK | RIGHT_MASK:
-                        printf(" ┗");
-                    break;
-                    case DOWN_MASK | LEFT_MASK:
-                        printf("━┓");
-                    break;
-                    case DOWN_MASK | RIGHT_MASK:
-                        printf(" ┏");
-                    break;
-                    case LEFT_MASK | RIGHT_MASK:
-                        printf("━━");
-                    break;
-
-                    // Probably wrong
-                    default: 
-                        printf(" ? ");
-                    break;
-                    }
-                    reset_text_color();  
-                #else
-                    printf("Unimplemented\n");
-                    break;
-                #endif
-            }
-            printf(" ║\n");
-        }
-
-        // print bottom bar
-        printf("╚");
-        for (int i = 0; i < board->width; i++){
-            printf("══");
-        }
-        printf("═╝\n");
+    printf("╔");
+    for (int i = 0; i < board->width; i++){
+        printf("══");
     }
+    printf("═╗\n");
+
+    // print nodes
+    for (int j = 0; j < board->height; j++){
+        printf("║");
+        for (int i = 0; i < board->width; i++){
+            board_location_t curr = get_loc(board, i, j);
+            enum COLOR col = get_node_color(get_node_at_loc(board, curr));
+
+            if (col == EMPTY) {
+                printf("  ");
+                continue;
+            }
+            
+            #if BOARD_PRINT_TYPE == 0
+                set_text_color(col);
+                printf("%2d", col);
+                reset_text_color();
+            #elif BOARD_PRINT_TYPE == 1
+                #define UP_MASK 1
+                #define DOWN_MASK 2
+                #define LEFT_MASK 4
+                #define RIGHT_MASK 8
+
+                // Need to reimplement using a new method. I will check all 4 edges.
+                // There can be 0-2 edges with the same color. Depending on the arrangement,
+                // I will use a switch statement to draw the correct piece
+
+                uint8_t result = 0;
+                if (get_node_color(get_node_up(board, curr)) == col) result |= UP_MASK;
+                if (get_node_color(get_node_down(board, curr)) == col) result |= DOWN_MASK;
+                if (get_node_color(get_node_left(board, curr)) == col) result |= LEFT_MASK;
+                if (get_node_color(get_node_right(board, curr)) == col) result |= RIGHT_MASK;
+
+                set_text_color(col);
+
+                switch (result)
+                {
+                case 0: // Lone node
+                    printf(" ⏺");
+                break;
+
+                // Lone nodes - assume start/end sources
+                case UP_MASK:
+                    printf(" ⏺");
+                break;
+                case DOWN_MASK:
+                    printf(" ⏺");
+                break;
+                case LEFT_MASK:
+                    printf("━⏺");
+                break;
+                case RIGHT_MASK:
+                    printf(" ⏺");
+                break;
+
+                // All possible pairs
+                case UP_MASK | DOWN_MASK:
+                    printf(" ┃");
+                break;
+                case UP_MASK | LEFT_MASK:
+                    printf("━┛");
+                break;
+                case UP_MASK | RIGHT_MASK:
+                    printf(" ┗");
+                break;
+                case DOWN_MASK | LEFT_MASK:
+                    printf("━┓");
+                break;
+                case DOWN_MASK | RIGHT_MASK:
+                    printf(" ┏");
+                break;
+                case LEFT_MASK | RIGHT_MASK:
+                    printf("━━");
+                break;
+
+                // Probably wrong
+                default: 
+                    printf(" ?");
+                break;
+                }
+                reset_text_color();  
+            #else
+                printf("Unimplemented\n");
+                break;
+            #endif
+        }
+        printf(" ║\n");
+    }
+
+    // print bottom bar
+    printf("╚");
+    for (int i = 0; i < board->width; i++){
+        printf("══");
+    }
+    printf("═╝\n");
 }

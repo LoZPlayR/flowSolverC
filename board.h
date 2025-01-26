@@ -2,6 +2,7 @@
 #define BOARD_H
 
 #include "util.h"
+#include "levelpack.h"
 
 enum COLOR {EMPTY = -1, RED = 0, GREEN = 1, BLUE = 2, 
             YELLOW = 3, ORANGE = 4, CYAN = 5, MAGENTA = 6, 
@@ -15,7 +16,7 @@ typedef uint16_t board_location_t;
 
 // Data that each board stores for each node
 typedef struct __attribute__((packed)) {
-    enum COLOR color : 4; // Idk if i'll need more than 16 colors
+    enum COLOR color : 5; // 16 colors + Empty
     bool up : 1;
     bool down : 1;
     bool left : 1;
@@ -78,7 +79,7 @@ void remove_edges_into_node(board_t* board, board_location_t loc);
 void add_source_node(board_t* board, enum COLOR col, board_location_t loc);
 
 // Creation and deletion
-board_t* create_board(void);
+void create_board(unsolved_board_t b, board_t* board);
 void destroy_board(board_t* board);
 void copy_board(board_t* src, board_t* dest);
 

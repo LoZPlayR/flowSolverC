@@ -5,6 +5,7 @@
 #include "board.h"
 #include "util.h"
 #include "eval.h"
+#include "levelpack.h"
 
 typedef struct {
     board_t* board;
@@ -13,6 +14,12 @@ typedef struct {
     int curr;
 } position_t; 
 
-int main();
+typedef struct {
+    float time;
+    char* filename;
+    int level;
+} run_data_t;
+
+int main(int argc, char **argv);
 
 #endif

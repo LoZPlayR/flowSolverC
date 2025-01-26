@@ -12,6 +12,13 @@
 // Turns on/off debug mode
 #define DEBUG 0
 
+/*
+    0 - Nothing
+    1 - Unsolved & Solutions
+    2 - In progress
+*/
+#define DISPLAY_TYPE 1
+
 enum DIRECTION { UP, DOWN, LEFT, RIGHT };
 
 /*
