@@ -9,7 +9,7 @@
 
 typedef struct {
     board_t* board;
-    move_t* moves;
+    sortable_move_t* moves;
     int num_moves;
     int curr;
 } position_t; 

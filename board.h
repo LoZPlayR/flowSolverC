@@ -10,23 +10,40 @@ enum COLOR {EMPTY = -1, RED = 0, GREEN = 1, BLUE = 2,
             LIME = 11, TAN = 12, INDIGO = 13, AQUA = 14, PINK = 15};
 
 // defines a specific location on the board
-typedef uint16_t board_location_t;
+// currently is just the location itself.
+// locations take up 9 bits max (since 400 < 512)
+// So I have 7 bits of free space rn
+// Might as well store some extra data!
+// If I save index and b->width, I can get
+// everything I will potentially need with 2 bytes!
+// Can I store more?
+// Saving b->width requires 5 bytes. I have 2 more
+// Is there any way to store height as well...?
 
-#define NO_LOC ((board_location_t){-1})
+// Maybe loc will be simpler. It just uses b->width
+// and the index to store a position. It *can* provide
+// More positions, but will only catch oob when going
+// below 0? It would need to if I want the get_loc_left
+// function to work. Let's do it i guess
+typedef struct __attribute__((packed)) {
+    uint16_t index : 9;
+    uint8_t width : 5;
+    // Extra 2 bits to work with
+} board_location_t;
+
+extern const board_location_t NO_LOC;
 
 // Data that each board stores for each node
-typedef struct __attribute__((packed)) {
+typedef  struct __attribute__((packed)) {
     enum COLOR color : 5; // 16 colors + Empty
     bool up : 1;
     bool down : 1;
     bool left : 1;
     bool right : 1;
+    enum COLOR guaranteed_space : 5; // guranteed space
 } board_node_t;
 
-#define INVALID ((board_node_t){-1})
-
-// TODO: Get rid of this?
-#define NO_PREV -1
+extern const board_node_t INVALID_NODE;
 
 typedef struct {
     // An array of all nodes
@@ -38,6 +55,9 @@ typedef struct {
     int width;
     int height;
     int n;
+    
+    // Zobrist hash of the board
+    // zob_key_t z_key;
 } board_t;
 
 // functions for board sources
@@ -46,32 +66,40 @@ board_location_t get_end_source(board_t* board, enum COLOR col);
 void update_source(board_t* board, enum COLOR col, bool is_start, board_location_t new_loc);
 
 // Functions for board_location_t //
+int get_loc_col(board_location_t loc);
+int get_loc_row(board_location_t loc);
+int get_loc_index(board_location_t loc);
 bool loc_is_valid(board_location_t loc);
 board_location_t get_loc(board_t* board, int x, int y);
-board_location_t get_loc_up(board_t* board, board_location_t loc);
-board_location_t get_loc_down(board_t* board, board_location_t loc);
-board_location_t get_loc_left(board_t* board, board_location_t loc);
-board_location_t get_loc_right(board_t* board, board_location_t loc);
+board_location_t get_loc_up(board_location_t loc);
+board_location_t get_loc_down(board_location_t loc);
+board_location_t get_loc_left(board_location_t loc);
+board_location_t get_loc_right(board_location_t loc);
+bool is_loc_corner(board_t* board, board_location_t loc);
+bool locs_are_equal(board_location_t a, board_location_t b);
 
 // Functions for board_node_t //
-enum COLOR get_node_color(board_node_t node);
-bool node_up_edge(board_node_t node);
-bool node_down_edge(board_node_t node);
-bool node_left_edge(board_node_t node);
-bool node_right_edge(board_node_t node);
+enum COLOR get_node_color(board_node_t* node);
+bool get_node_up_edge(board_node_t* node);
+bool get_node_down_edge(board_node_t* node);
+bool get_node_left_edge(board_node_t* node);
+bool get_node_right_edge(board_node_t* node);
+enum COLOR node_guaranteed(board_node_t* node);
+bool node_is_invalid(board_node_t* node);
 void set_node_color(board_t* board, board_location_t loc, enum COLOR col);
 void set_node_up_edge(board_t* board, board_location_t loc, bool new_val);
 void set_node_down_edge(board_t* board, board_location_t loc, bool new_val);
 void set_node_left_edge(board_t* board, board_location_t loc, bool new_val);
 void set_node_right_edge(board_t* board, board_location_t loc, bool new_val);
+bool set_node_guaranteed(board_t* board, enum COLOR col, board_location_t loc);
 
 // Functions for board_t //
 // Functions for getting nodes
-board_node_t get_node_at_loc(board_t* board, board_location_t loc);
-board_node_t get_node_up(board_t* board, board_location_t loc);
-board_node_t get_node_down(board_t* board, board_location_t loc);
-board_node_t get_node_left(board_t* board, board_location_t loc);
-board_node_t get_node_right(board_t* board, board_location_t loc);
+board_node_t* get_node_at_loc(board_t* board, board_location_t loc);
+board_node_t* get_node_up(board_t* board, board_location_t loc);
+board_node_t* get_node_down(board_t* board, board_location_t loc);
+board_node_t* get_node_left(board_t* board, board_location_t loc);
+board_node_t* get_node_right(board_t* board, board_location_t loc);
 
 
 // Functions for modifying nodes
@@ -87,6 +115,5 @@ void copy_board(board_t* src, board_t* dest);
 bool are_locs_adjacent(board_t* board, board_location_t loc1, board_location_t loc2);
 enum DIRECTION get_dir_between_nodes(board_t* board, board_location_t loc1, board_location_t loc2);
 void print_board(board_t* board);
-
 
 #endif
