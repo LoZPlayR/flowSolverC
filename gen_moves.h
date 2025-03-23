@@ -17,4 +17,5 @@ int generate_guaranteed_moves(board_t* board, move_t* move_arr);
 void perform_local_move(board_t* board, move_t move);
 void perform_move(board_t* src, board_t* dst, move_t move);
 void print_move(move_t* move, int width);
+board_location_t get_move_dest(board_t* board, move_t move);
 #endif

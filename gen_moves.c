@@ -150,9 +150,6 @@ int generate_guaranteed_moves(board_t* board, move_t* move_arr){
             continue;
         }
 
-        // Keep track of possible moves from this point
-        int num_options = 0;
-
         // Check all directions and add to moves if we can travel there
         if (get_node_up_edge(start_node) && (node_guaranteed(get_node_up(board, start_loc)) == i)){
             move_arr[total_moves].color = i;
@@ -280,4 +277,32 @@ void print_move(move_t* move, int width){
         printf("This should be impossible??\n");
     break;
     }
+}
+
+board_location_t get_move_dest(board_t* board, move_t move){
+    board_location_t orig = move.is_start ? get_start_source(board, move.color) : get_end_source(board, move.color);
+
+    // Assume dest is valid
+    board_location_t dest;
+    switch (move.dir) {
+        case UP:{
+            dest = get_loc_up(orig);
+            break;
+        }
+        case DOWN:{
+            dest = get_loc_down(orig);
+            break;
+        }
+        case LEFT:{
+            dest = get_loc_left(orig);
+            break;
+        }
+        case RIGHT:{
+            dest = get_loc_right(orig);
+            break;
+        }
+        default:
+            dest = NO_LOC;
+    }
+    return dest;
 }

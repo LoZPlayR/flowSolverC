@@ -21,6 +21,7 @@ typedef struct {
 bool is_solved(board_t* board);
 bool is_solvable(board_t* board);
 void convert_to_sortable(move_t* old, sortable_move_t* new, int size);
+bool check_dest_edges_valid(board_t* board, move_t move);
 bool evaluate_move(board_t* board, sortable_move_t* s);
 int compare_sortable(const void* s1, const void* s2);
 int find_guaranteed_spaces(board_t* board);

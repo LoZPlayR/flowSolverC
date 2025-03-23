@@ -1,6 +1,6 @@
 #include "solver.h"
 
-const int MAX_DEPTH = -1;
+const int MAX_DEPTH = 9999;
 
 // TODO: Add hashing and some sort of caching system for flow boards
 // TODO: Make Solver more organized? Add some more functions
@@ -38,9 +38,9 @@ int solve(unsolved_board_t b){
 
     while(true) {
         count += 1;
-        #if DEBUG
-            if (MAX_DEPTH != -1 && count > MAX_DEPTH) break;
-        #endif
+        
+        if (MAX_DEPTH != -1 && count > MAX_DEPTH) break;
+        
 
         bool board_is_valid = true;
 
@@ -50,8 +50,6 @@ int solve(unsolved_board_t b){
             
             // Found a contradiction - something is wrong
             if (guaranteed_found == -1){
-                stack[depth].num_moves = -1;
-                depth--;
                 board_is_valid = false;
             }
             
@@ -60,25 +58,33 @@ int solve(unsolved_board_t b){
                 break;
             }
         }
-        // printf("After finding g moves:\n");
-        // if (board_is_valid) print_board(stack[depth].board);
         
         // Perform all guaranteed moves for this frame
         while(board_is_valid){
             // Use move buffer
             int found_moves = generate_guaranteed_moves(stack[depth].board, move_buffer);
-
+            
             // No more guaranteed moves!
             if (found_moves == 0){
                 break;
             }
-
+            
+            // Perfom the moves
             for (int i = 0; i < found_moves; i++){
+                // If any guaranteed space is invalid, the entire board is invalid
+                if (!check_dest_edges_valid(stack[depth].board, move_buffer[i])){
+                    board_is_valid = false;
+                    break;
+                }
                 perform_local_move(stack[depth].board, move_buffer[i]);
             }
         }
-        // printf("After doing g moves:\n");
-        // if (board_is_valid) print_board(stack[depth].board);
+        
+        // Board is invalid - step back
+        if (!board_is_valid){
+            stack[depth].num_moves = -1;
+            depth--;
+        }
 
         // Check if the board is full/solved
         if (is_solved(stack[depth].board)) {
@@ -88,7 +94,7 @@ int solve(unsolved_board_t b){
 
         // Generate moves if at new depth. Set up stack frame
         if (stack[depth].num_moves == -1){
-            #if DEBUG
+            #if DEBUG && VERBOSE
                 printf("Went down a level\n");
             #endif
             stack[depth].curr = 0;
@@ -103,7 +109,7 @@ int solve(unsolved_board_t b){
             int num_invalid = 0;
 
             for (int i = 0; i < stack[depth].num_moves; i++){
-                num_invalid += evaluate_move(stack[depth].board, stack[depth].moves + i);
+                num_invalid += !evaluate_move(stack[depth].board, stack[depth].moves + i);
             }
 
             // Sort the entire set of moves - invalid ones should go to end
@@ -111,9 +117,10 @@ int solve(unsolved_board_t b){
                     sizeof(sortable_move_t), compare_sortable);
 
             // Remove the moves
-            //stack[depth].num_moves -= num_invalid;
+            stack[depth].num_moves -= num_invalid;
             
             #if DEBUG
+                printf("Removed %d moves!\n", num_invalid);
                 printf("Generated %d moves at depth %d\n", stack[depth].num_moves, depth);
                 for (int i = 0; i < stack[depth].num_moves; i++){
                     print_move(&(stack[depth].moves[i].move), stack[depth].board->width);
