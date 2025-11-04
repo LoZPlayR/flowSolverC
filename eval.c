@@ -1,389 +1,539 @@
 #include "eval.h"
 
-// TODO: Remove is_valid checks for locations here - I'm
-//       checking valid edges, so I should always be covered.
-// TODO: Split into 2 files:
-//      eval_board.c
-//      eval_moves.c
-// TODO: Add Blackspace analysis
+//get_cell(board, parent / w, parent % w);
 
+// Check if a board is completely solved
+bool is_solved(board_t* board){
+    bitmap_t* seen = bitmap_create(board->width, board->height);
+    int w = board->width;
 
-///////////////////////////////
-// Functions for visited set //
-///////////////////////////////
+    key* stack = malloc(sizeof(key) * board->width * board->height);
+    int ind = 0;
 
-/*
-    Checks if loc is visited
-*/
-bool is_location_visited(dfs_visited_t visited, board_location_t loc){
-    int ind = get_loc_index(loc);
-    return (visited[ind / 32]) & (1 << (ind % 32));
-}
+    // iterate thru sources to find all paths
+    for (int i = 0; i < board->n; i += 2){
+        key start = board->sources->keys[i];
+        key goal = board->sources->keys[i + 1];
 
-/*
-    Sets loc as visited
-*/
-void set_location_visited(dfs_visited_t visited, board_location_t loc){
-    int ind = get_loc_index(loc);
-    visited[ind / 32] |= (1 << (ind % 32));
-}
+        stack[0] = start;
+        ind = 1;
+        bool success = false;
 
-/*
-    Creates a visited set
-*/
-dfs_visited_t create_visited(int width, int height){
-    int area = width * height;
+        while (ind){
+            key curr = stack[--ind];
 
-    dfs_visited_t visited = calloc(1 + (area / 32), sizeof(uint32_t));
+            if (curr == goal){
+                success = true;
+                break;
+            }
 
-    return visited;
-}
-
-/*
-    Destroys a visited set
-*/
-void destroy_visited(dfs_visited_t visted){
-    free(visted);
-}
-
-/*
-    Performs bfs on board from loc to the end source node of col on board.
-    Stores the shortest path in line, and the length of the line in line_end
-*/
-bool bfs(board_t* board, dfs_visited_t visited, board_location_t loc, enum COLOR col, line_t line, int* line_end){
-    // The end goal
-    board_location_t end = get_end_source(board, col);
-
-    // queue for all indices
-    board_location_t queue[board->width * board->height];
-
-    // Keeps track of previous node
-    board_location_t previous[board->width * board->height];
-
-    queue[0] = loc;
-    previous[get_loc_index(loc)] = NO_LOC;
-
-    int curr_ind = 0;
-    int end_ind = 1;
-
-    set_location_visited(visited, loc);
-
-    bool result = false;
-
-
-    while(curr_ind != end_ind){
-        board_node_t* curr_node = get_node_at_loc(board, queue[curr_ind]);
-                
-        // Node is saved for another color
-        if (node_guaranteed(curr_node) != EMPTY && 
-            node_guaranteed(curr_node) != col){
-            curr_ind++;
-            continue;
-        }
-        
-        // Success?
-        if (are_locs_adjacent(board, queue[curr_ind], end) || get_loc_index(queue[curr_ind]) == get_loc_index(end)){
-            result = true;
-            break;
-        }
-
-        // Add children
-        board_location_t up = get_loc_up(queue[curr_ind]);
-        if (loc_is_valid(up) && !is_location_visited(visited, up) && 
-            get_node_up_edge(curr_node)){
-
-            queue[end_ind++] = up;
-            set_location_visited(visited, up);
-            previous[get_loc_index(up)] = queue[curr_ind];
-        }
-        
-        // Since i'm checking that the down edge exists, I prolly
-        // don't need to verify that it's valid
-        board_location_t down = get_loc_down(queue[curr_ind]);
-        if (loc_is_valid(down) && !is_location_visited(visited, down) && 
-            get_node_down_edge(curr_node)){
-
-            queue[end_ind++] = down;
-            set_location_visited(visited, down);
-            previous[get_loc_index(down)] = queue[curr_ind];
-        }
-
-        board_location_t left = get_loc_left(queue[curr_ind]);
-        if (loc_is_valid(left) && !is_location_visited(visited, left) && 
-            get_node_left_edge(curr_node)){
-
-            queue[end_ind++] = left;
-            set_location_visited(visited, left);
-            previous[get_loc_index(left)] = queue[curr_ind];
-        }
-
-        board_location_t right = get_loc_right(queue[curr_ind]);
-        if (loc_is_valid(right) && !is_location_visited(visited, right) 
-            && get_node_right_edge(curr_node)){
-
-            queue[end_ind++] = right;
-            set_location_visited(visited, right);
-            previous[get_loc_index(right)] = queue[curr_ind];
-        }
-        curr_ind++;
-    }
-    
-
-    board_location_t line_curr = queue[curr_ind];
-    int line_ind = 0;
-    
-    // Only calculate the line if we find the end node (effectively if (while(true)))
-    while (result){
-        line[line_ind++] = line_curr;
-        line_curr = previous[get_loc_index(line_curr)];
-
-
-        // original index previous is NO_LOC
-        if (!loc_is_valid(line_curr)){
-            break;
-        }
-    }
-
-    // give line length
-    *line_end = line_ind;
-
-    return result;
-}
-
-// does dfs on board until it finds the end with color col
-// Always assume the goal is the end source node
-bool dfs(board_t* board, dfs_visited_t visited, board_location_t loc, enum COLOR col){
-    // The end goal
-    board_location_t end = get_end_source(board, col);
-
-    board_node_t* curr_node = get_node_at_loc(board, loc);
-
-    // If node is for another color, do not use
-    if (node_guaranteed(curr_node) != EMPTY && 
-        node_guaranteed(curr_node) != col) return false;
-    
-    if (are_locs_adjacent(board, loc, end)) return true;
-
-    // Otherwise, set this location as visited
-    set_location_visited(visited, loc);
-
-    // And checks the adjacent locations (if edge exists and not visited)
-    // Also added short circuiting
-    board_location_t up = get_loc_up(loc);
-    if (loc_is_valid(up) && !is_location_visited(visited, up) && 
-        get_node_up_edge(curr_node)){
-        if (dfs(board, visited, up, col)) return true;
-    }
-
-    board_location_t down = get_loc_down(loc);
-    if (loc_is_valid(down) && !is_location_visited(visited, down) && 
-        get_node_down_edge(curr_node)){
-        if (dfs(board, visited, down, col)) return true;
-    }
-
-    board_location_t left = get_loc_left(loc);
-    if (loc_is_valid(left) && !is_location_visited(visited, left) && 
-        get_node_left_edge(curr_node)){
-        if (dfs(board, visited, left, col)) return true;
-    }
-
-    board_location_t right = get_loc_right(loc);
-    if (loc_is_valid(right) && !is_location_visited(visited, right) 
-        && get_node_right_edge(curr_node)){
-        if (dfs(board, visited, right, col)) return true;
-    }
-
-    return false;
-}
-
-/*
-    Mark all bottlenecks on the line. Iterate forwards thru the list 
-*/
-int mark_bottlenecks(board_t* board, enum COLOR col, line_t line, int len){
-    board_location_t end = get_end_source(board, col);
-    board_location_t start = get_start_source(board, col);
-
-    int marked = 0;
-
-    for (int i = 0; i < len - 1; i++){
-        dfs_visited_t visited = create_visited(board->width, board->height);
-
-        // Mark position as visited
-        set_location_visited(visited, line[i]);
-
-        // Node is necessary, mark it as a guaranteed space
-        if (!dfs(board, visited, start, col)){
-            enum COLOR curr_col = node_guaranteed(get_node_at_loc(board, line[i]));
+            int r = curr / w;
+            int c = curr % w;
+            cellstate_t cell = get_cell(board, r, c);
             
-            // Node is a guaranteed space already
-            if (!set_node_guaranteed(board, col, line[i])) return -1;
-            marked += curr_col == EMPTY;
+            if (bitmap_get(seen, c, r)) continue;
+
+            int edgeCount = cell.edges.n + cell.edges.e + cell.edges.s + cell.edges.w;
+            
+            if (edgeCount > 2){
+                free(stack);
+                bitmap_destroy(seen);
+                return false;
+            }
+                
+
+            if (cell.edges.n) stack[ind++] = get_index(w, r - 1, c);
+            if (cell.edges.e) stack[ind++] = get_index(w, r, c + 1);
+            if (cell.edges.s) stack[ind++] = get_index(w, r + 1, c);
+            if (cell.edges.w) stack[ind++] = get_index(w, r, c - 1);
+            
+            bitmap_set(seen, c, r, 1);
         }
-        destroy_visited(visited);
-    }
-    return marked;
-}
 
-bool is_color_solvable(board_t* board, enum COLOR col){
-    #if DEBUG
-        assert(col != EMPTY);
-    #endif
-
-    dfs_visited_t visited = create_visited(board->width, board->height);
-
-    bool result = dfs(board, visited, get_start_source(board, col), col);
-
-    destroy_visited(visited);
-
-    return result;
-}
-
-bool is_solvable(board_t* board){
-    #if DEBUG
-        printf("Board at beginning of eval:\n");
-        print_board(board);
-    #endif
-    for (int i = RED; i < board->n; i++){
-        // Don't check finished colors
-        if (locs_are_equal(get_start_source(board, i), get_end_source(board, i))) continue;
-        
-        if(!is_color_solvable(board, i)){
-            #if DEBUG && VERBOSE
-                printf("Board unsolvable! No path from %d to %d for color %d\n", get_loc_index(get_start_source(board, i)), get_loc_index(get_end_source(board, i)), i);
-            #endif
+        if (!success){
+            free(stack);
+            bitmap_destroy(seen);
             return false;
         }
     }
-    #if DEBUG && VERBOSE
-        printf("Eval complete!\n");
+
+    free(stack);
+    bitmap_destroy(seen);
+    return true;
+}
+
+// Ensures a space has valid edges
+// TODO: Inline
+bool valid_edges_single(board_t* board, int r, int c){
+    // Ensure valid input
+    #if DEBUG
+        assert(r < board->height && c < board->width);
+        assert(0 <= r && 0 <= c);
     #endif
-    return true;
-}
-
-bool is_solved(board_t* board){
-    // Check that all source nodes are connected
-    for (int i = RED; i < board->n; i++){
-        if(!locs_are_equal(get_start_source(board, i), get_end_source(board, i))) return false;
-    }
-
-    return true;
-}
-
-// Creates a sortable move. Minimum value is 1, invalid is 0
-void convert_to_sortable(move_t* old, sortable_move_t* new, int size){
-    for(int i = 0; i < size; i++){
-        new[i].move = old[i];
-        new[i].value = 1.0 / (old[i].options);
-    }
-}
-
-// Check how many backward edges the dest has to the same color. >3 = implies
-// invalid. 2 is invalid if not connected to the opposite edge. 1 is expected
-bool check_dest_edges_valid(board_t* board, move_t move){
-    board_location_t dest = get_move_dest(board, move);
-
-    board_location_t opposite_source = move.is_start ? \
-            get_end_source(board, move.color) : get_start_source(board, move.color);
     
-    board_location_t orig = move.is_start ? get_start_source(board, move.color) : get_end_source(board, move.color);
-
-    // If we are connecting bridges, it does not matter
-    if (locs_are_equal(dest, opposite_source)) return true;
-
-    int num_same_color = 0;
-
-    board_node_t* up_node = get_node_up(board, dest);
-    if (up_node != &INVALID_NODE){
-        int up = get_node_color(up_node) == move.color && \
-                          get_node_down_edge(up_node) && \
-                          !locs_are_equal(get_loc_up(dest), opposite_source);
-        num_same_color += up;
-    }
-    board_node_t* down_node = get_node_down(board, dest);
-    if (down_node != &INVALID_NODE){
-        int c = get_node_color(down_node) == move.color && \
-                          get_node_up_edge(down_node) && \
-                          !locs_are_equal(get_loc_down(dest), opposite_source);
-        num_same_color += c;
-    }
-    board_node_t* left_node = get_node_left(board, dest);
-    if (left_node != &INVALID_NODE){
-        int c = get_node_color(left_node) == move.color && \
-                          get_node_right_edge(left_node) && \
-                          !locs_are_equal(get_loc_left(dest), opposite_source);
-        num_same_color += c;
-    }
-    board_node_t* right_node = get_node_right(board, dest);
-    if (right_node != &INVALID_NODE){
-        int c = get_node_color(right_node) == move.color && \
-                          get_node_left_edge(right_node) && \
-                          !locs_are_equal(get_loc_right(dest), opposite_source);
-        num_same_color += c;
-    }
-
-    return num_same_color == 1 ? true : false;
-}
-
-// Evaluates a move and assigns it a float
-// If move is invalid, returns false.
-bool evaluate_move(board_t* board, sortable_move_t* s){
-    bool is_valid = true;
-
-    enum COLOR col = s->move.color;
-    board_location_t orig = s->move.is_start ? get_start_source(board, col) : get_end_source(board, col);
-    board_location_t dest = get_move_dest(board, s->move);
-
-    // Check the edges to see if move is invalid
-    if(!check_dest_edges_valid(board, s->move)){
-        s->value = -1;
+    cellstate_t cell = get_cell(board, r, c);
+    int edgeCount = cell.edges.n + cell.edges.s + cell.edges.e + cell.edges.w;
+    
+    if (!cell.node.isOccupied && edgeCount < (1 + !cell.node.isSource)){
         return false;
     }
+    if (cell.node.isOccupied && edgeCount != (1 + !cell.node.isSource)){
+        return false;
+    }
+    
+    int occupiedEdgeCount = (cell.edges.n && get_cell(board, r - 1, c).node.isOccupied) +
+                            (cell.edges.e && get_cell(board, r, c + 1).node.isOccupied) +
+                            (cell.edges.s && get_cell(board, r + 1, c).node.isOccupied) +
+                            (cell.edges.w && get_cell(board, r, c - 1).node.isOccupied);
+    
+    if (occupiedEdgeCount > 2 - cell.node.isSource) {
+        return false;
+    }
+    return true;
+}
 
-    board_node_t* dest_node = get_node_at_loc(board, dest);
+// Check for impossible edge counts in the board
+bool valid_edges(board_t* board){
+    for (int r = 0; r < board->height; r++){
+        for (int c = 0; c < board->width; c++){
+            if (!valid_edges_single(board, r, c)) return false;            
+        }
+    }
+    return true;
+}
 
-    // Add value if dest has few edges (wall crawl)
-    int num_edges = get_node_up_edge(dest_node) + get_node_down_edge(dest_node) + \
-                    get_node_left_edge(dest_node) + get_node_right_edge(dest_node);
-    s->value += (4.0 - num_edges) / 4;
+// Ensures colored edges are correct
+// 2 cases:
+// ### Case 1 - (r, c) color C is != EMPTY
+// - in this case, we count for adjacent cells with color C (or empty). > 0 if source, > 1 ow
+// ### Case 2 - (r, c) is empty (=> non source)
+// - in this case, we check for matching adjacent cells. There must be one match
+bool valid_colors_single(board_t* board, int r, int c){
+    #if DEBUG
+        assert(r < board->height && c < board->width);
+        assert(0 <= r && 0 <= c);
+    #endif
+
+    cellstate_t cell = get_cell(board, r, c);
+    
+    // Ensure all occupied adjacent cells are matching color or empty
+    cellstate_t nCell = NULL_CELL;
+    cellstate_t eCell = NULL_CELL;
+    cellstate_t sCell = NULL_CELL;
+    cellstate_t wCell = NULL_CELL;
+    
+    if (cell.edges.n) nCell = get_cell(board, r - 1, c);
+    if (cell.edges.s) sCell = get_cell(board, r + 1, c);
+    if (cell.edges.e) eCell = get_cell(board, r, c + 1); 
+    if (cell.edges.w) wCell = get_cell(board, r, c - 1);
+
+    // Figures out how many edges are the same color as the node (or empty)
+    if (cell.node.col != EMPTY){
+        int colEdges =  (nCell.node.col == EMPTY || nCell.node.col == cell.node.col) +
+                        (eCell.node.col == EMPTY || eCell.node.col == cell.node.col) +
+                        (sCell.node.col == EMPTY || sCell.node.col == cell.node.col) +
+                        (wCell.node.col == EMPTY || wCell.node.col == cell.node.col);
+
+        if (colEdges < 1 + !cell.node.isSource){
+            return false;
+        }
+
+        // Ensure no occupied adjacent cells are different colors (NULL_CELLs are not occupied)
+        if (nCell.node.isOccupied && nCell.node.col != EMPTY && nCell.node.col != cell.node.col) return false;
+        if (eCell.node.isOccupied && eCell.node.col != EMPTY && eCell.node.col != cell.node.col) return false;
+        if (sCell.node.isOccupied && sCell.node.col != EMPTY && sCell.node.col != cell.node.col) return false;
+        if (wCell.node.isOccupied && wCell.node.col != EMPTY && wCell.node.col != cell.node.col) return false;
+    
+        // Figures out how many edges match colors (or are empty)
+    // Since source cells are colored from the start, these will never be source cells
+    } else {
+        bool match = false;
+        
+        // i.e. NULL_CELL
+        if (nCell.node.col != -1){
+
+            // Any other colored edge qualifies a match
+            if (nCell.node.col == EMPTY){
+                match = eCell.node.col != -1 || sCell.node.col != -1 || wCell.node.col != -1;
+            
+            // Must match north cell (or be empty also)
+            } else {
+                match = eCell.node.col == nCell.node.col || eCell.node.col == EMPTY ||
+                        sCell.node.col == nCell.node.col || sCell.node.col == EMPTY ||
+                        wCell.node.col == nCell.node.col || wCell.node.col == EMPTY;
+            }
+        }
+        
+        // skip if match already found
+        if (!match && eCell.node.col != -1){
+            // Any other colored edge qualifies a match
+            if (eCell.node.col == EMPTY){
+                match = sCell.node.col != -1 || wCell.node.col != -1;
+            
+            // Must match east cell
+            } else {
+                match = sCell.node.col == eCell.node.col || sCell.node.col == EMPTY ||
+                        wCell.node.col == eCell.node.col || wCell.node.col == EMPTY;
+            }
+        }
+
+        // skip if match already found
+        if (!match && sCell.node.col != -1){
+            // Any other colored edge qualifies a match
+            if (sCell.node.col == EMPTY){
+                match = wCell.node.col != -1;
+            
+            // Must match south cell
+            } else {
+                match = wCell.node.col == sCell.node.col || wCell.node.col == EMPTY;
+            }
+        }
+
+        // No need for a west case, since it would have been found in one of the previous
+        if (!match) {
+            return false;
+        }
+    }
+
+    // Do a check for loopbacks
+    if (!cell.edges.n && r > 0) nCell = get_cell(board, r - 1, c);
+    if (!cell.edges.e && c < board->width - 1) eCell = get_cell(board, r, c + 1);
+    if (!cell.edges.s && r < board->height - 1) sCell = get_cell(board, r + 1, c);
+    if (!cell.edges.w && c > 0) wCell = get_cell(board, r, c - 1);
+
+    if (cell.node.col != EMPTY) {
+        int matching =  (nCell.node.col == cell.node.col) + 
+                        (eCell.node.col == cell.node.col) + 
+                        (sCell.node.col == cell.node.col) + 
+                        (wCell.node.col == cell.node.col);
+        if (matching > 1 + !cell.node.isSource) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Check for conflicting colored edges
+bool valid_colors(board_t* board){
+    for (int r = 0; r < board->height; r++){
+        for (int c = 0; c < board->width; c++){
+            if (!valid_colors_single(board, r, c)){
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// Runs color/edge checks in the cell r, c and directly adjacent to r, c
+bool validate_area(board_t* board, int r, int c){
+    int w = board->width;
+    int h = board->height;
+
+
+    #if DEBUG
+        assert(0 <= r && r <= h);
+        assert(0 <= c && c <= w);
+    #endif
+
+
+    // Get bounds
+    int lo_r = r == 0 ? 0 : r - 1;
+    int hi_r = r == h - 1 ? h : r + 2;
+    int lo_c = c == 0 ? 0 : c - 1;
+    int hi_c = c == w - 1 ? w : c + 2;
+
+    // Do the 3x3 area
+    for (int r_i = lo_r; r_i < hi_r; r_i++){
+        for (int c_i = lo_c; c_i < hi_c; c_i++){
+            if (!(valid_edges_single(board, r_i, c_i) && valid_colors_single(board, r_i, c_i))){
+                return false;
+            }
+        }
+    }
+    
+    // // check all sides
+    // bool n, e, s, w, p;
+    
+    // n = (r == 0) || ;
+    // e = (c == wi - 1) || (valid_edges_single(board, r, c + 1) && valid_colors_single(board, r, c + 1));
+    // s = (r == hi - 1) || (valid_edges_single(board, r + 1, c) && valid_colors_single(board, r + 1, c));
+    // w = (c == 0) || (valid_edges_single(board, r, c - 1) && valid_colors_single(board, r, c - 1));
+    // p = valid_edges_single(board, r, c) && valid_colors_single(board, r, c);
 
     return true;
 }
 
-// Compares 2 sortable moves
-int compare_sortable(const void* s1, const void* s2){
-    return (((sortable_move_t*)s1)->value > ((sortable_move_t*)s2)->value) ? -1 : ((((sortable_move_t*)s1)->value < ((sortable_move_t*)s2)->value) ? 1 : 0);
+// Ensure there is some path to connect all lines
+bool validate_paths(board_t* board){
+    int w = board->width;
+
+    key* stack = malloc(4 * sizeof(key) * board->width * board->height);
+    int ind = 0;
+
+    // iterate thru sources and find a path
+    for (int i = 0; i < board->n; i += 2){
+        bitmap_t* seen = bitmap_create(board->width, board->height);
+        key start = board->sources->keys[i];
+        key goal = board->sources->keys[i + 1];
+
+        stack[0] = start;
+        ind = 1;
+        bool success = false;
+
+        while (ind){
+            key curr = stack[--ind];
+
+            if (curr == goal){
+                success = true;
+                break;
+            }
+
+            int r = curr / w;
+            int c = curr % w;
+            cellstate_t cell = get_cell(board, r, c);
+            
+            if (bitmap_get(seen, c, r)) continue;
+                
+            if (cell.edges.n) stack[ind++] = get_index(w, r - 1, c);
+            if (cell.edges.e) stack[ind++] = get_index(w, r, c + 1);
+            if (cell.edges.s) stack[ind++] = get_index(w, r + 1, c);
+            if (cell.edges.w) stack[ind++] = get_index(w, r, c - 1);
+            
+            bitmap_set(seen, c, r, 1);
+        }
+        bitmap_destroy(seen);
+
+        if (!success){
+            free(stack);
+            return false;
+        }
+    }
+
+    free(stack);
+    return true;
 }
 
-// Find and mark all guaranteed spaces on a board
-// Returns -1 if fail. Otherwise, returns the number of moves found
-int find_guaranteed_spaces(board_t* board){
-    int total = 0;
-    for (int col = 0; col < board->n; col++){
-        // Create a space for a shortest path line
-        // TODO: Find tighter bound
-        line_t line = calloc(board->width * board->height, sizeof(board_location_t));
-        int line_end;
-        
-        dfs_visited_t visited = create_visited(board->width, board->height);
-        
-        if (bfs(board, visited, get_start_source(board, col), col, line, &line_end)) {
-            #if DEBUG && VERBOSE
-                printf("Color %d BFS Shortest path: [", col);
-                for (int i = 0; i < line_end; i++){
-                    // printf("%d, ", get_loc_index(line[i]));
-                    printf("(%d, %d), ", get_loc_col(line[i]), get_loc_row(line[i]));
-                }
-                printf("]\n");
-            #endif
+// Check if a move is valid/will throw an error (currently just checks colors)
+bool validate_move(board_t* board, move_t move){
+    int r = move.r;
+    int c = move.c;
 
-            // Checks for bottlenecks along the shortest path
-            int new_bottlenecks = mark_bottlenecks(board, col, line, line_end);
-            if (new_bottlenecks == -1) return -1;
-            total += new_bottlenecks;
-        }
-        
-        free(line);
-        destroy_visited(visited);
+    cellstate_t cell = get_cell(board, r, c);
+    cellstate_t fromCell = NULL_CELL;
+    cellstate_t toCell = NULL_CELL;
+
+    switch (move.from){
+        case NORTH:
+            fromCell = get_cell(board, r - 1, c);
+        break;
+        case SOUTH:
+            fromCell = get_cell(board, r + 1, c);
+        break;
+        case EAST:
+            fromCell = get_cell(board, r, c + 1);
+        break;
+        case WEST:
+            fromCell = get_cell(board, r, c - 1);
+        break;
     }
-    return total;
+
+    switch (move.to){
+        case NORTH:
+            toCell = get_cell(board, r - 1, c);
+        break;
+        case SOUTH:
+            toCell = get_cell(board, r + 1, c);
+        break;
+        case EAST:
+            toCell = get_cell(board, r, c + 1);
+        break;
+        case WEST:
+            toCell = get_cell(board, r, c - 1);
+        break;
+    }
+    
+    // Should be impossible
+    #if DEBUG
+        assert(fromCell.node.col != -1);
+        assert(toCell.node.col != -1);
+    #endif
+
+    // All nonempty cells must match
+    enum COLOR col = cell.node.col;
+
+    // Check if the cell color and from cell match.
+    if (col == EMPTY) col = fromCell.node.col;
+    else if (fromCell.node.col != EMPTY && fromCell.node.col != col) return false;
+    
+    // If col is empty, last 2 were empty. Ow, they match. Ensure toCell is empty or matches
+    if (col == EMPTY) return true;
+    else return toCell.node.col == EMPTY || toCell.node.col == col;
+}
+
+// Check if the board is logically consistent
+bool board_consistent(board_t* board){
+    for (int r = 0; r < board->height; r++){
+        for (int c = 0; c < board->width; c++){
+            cellstate_t cell = get_cell(board, r, c);
+
+            int availableEdges = cell.edges.n + cell.edges.e + cell.edges.s + cell.edges.w;
+            
+            cellstate_t nCell = cell.edges.n ? get_cell(board, r - 1, c) : NULL_CELL;
+            cellstate_t eCell = cell.edges.e ? get_cell(board, r, c + 1) : NULL_CELL;
+            cellstate_t sCell = cell.edges.s ? get_cell(board, r + 1, c) : NULL_CELL;
+            cellstate_t wCell = cell.edges.w ? get_cell(board, r, c - 1) : NULL_CELL;
+
+            int occupiedEdges = (cell.edges.n && nCell.node.isOccupied) + 
+                                (cell.edges.e && eCell.node.isOccupied) + 
+                                (cell.edges.s && sCell.node.isOccupied) + 
+                                (cell.edges.w && wCell.node.isOccupied); 
+
+            if (cell.node.isOccupied){
+                if (cell.node.isSource) {
+                    // Make sure there is only 1 edge
+                    if (availableEdges != 1){
+                        print_board(board);
+                        printf("Inconsistent board: Found a source node at (%d, %d) with %d != 1 available edges. (Incorrect board)\n", r, c, availableEdges);
+                        return false;
+                    }
+
+                    // Make sure edge that it points to is the same color
+                    if ((cell.edges.n && (nCell.node.col != cell.node.col)) ||
+                        (cell.edges.e && (eCell.node.col != cell.node.col)) ||
+                        (cell.edges.s && (sCell.node.col != cell.node.col)) ||
+                        (cell.edges.w && (wCell.node.col != cell.node.col)) ){
+                        
+                        print_board(board);
+                        printf("Inconsistent board: Found a source node at (%d, %d) pointing to incorrect color. (Incorrect Board)\n", r, c);
+                        return false;
+                    }
+                } else {
+                    // Make sure there's only 2 edges
+                    if (availableEdges != 2){
+                        print_board(board);
+                        printf("Inconsistent board: Found an occupied node at (%d, %d) with %d != 2 available edges. (Incorrect board)\n", r, c, availableEdges);
+                        return false;
+                    }
+                                           
+                    // Make sure cells that it points to match the color (including empty)             
+                    if ((cell.edges.n && (nCell.node.col != cell.node.col)) ||
+                        (cell.edges.e && (eCell.node.col != cell.node.col)) ||
+                        (cell.edges.s && (sCell.node.col != cell.node.col)) ||
+                        (cell.edges.w && (wCell.node.col != cell.node.col)) ){
+                        
+                        print_board(board);
+                        printf("Inconsistent board: Found an occupied node at (%d, %d) pointing to incorrect color. (Incorrect board)\n", r, c);
+                        return false;
+                    }
+                }
+            } else {
+                if (cell.node.isSource) {
+                    // Make sure there are more than 1 available edge
+                    if (availableEdges < 2){
+                        print_board(board);
+                        printf("Inconsistent board: Found an unoccupied source at (%d, %d) with %d < 2 available edges (%s).\n", r, c, availableEdges, availableEdges == 1 ? "Guaranteed Move" : "Incorrect Board");
+                        return false;
+                    }
+                    
+                    // If there is only 1 empty edge and other non-matching edges, return false
+                    int emptyEdges = (cell.edges.n && nCell.node.col == EMPTY) + 
+                                     (cell.edges.e && eCell.node.col == EMPTY) + 
+                                     (cell.edges.s && sCell.node.col == EMPTY) + 
+                                     (cell.edges.w && wCell.node.col == EMPTY);
+                    
+                    int matchingEdges = (cell.edges.n && (nCell.node.col == cell.node.col)) + 
+                                        (cell.edges.e && (eCell.node.col == cell.node.col)) + 
+                                        (cell.edges.s && (sCell.node.col == cell.node.col)) + 
+                                        (cell.edges.w && (wCell.node.col == cell.node.col));
+                    
+                    // If there is only a single empty edge and all other edges do not match, it's a guaranteed move
+                    if (emptyEdges == 1 && matchingEdges == 0) {
+                        print_board(board);
+                        printf("Inconsistent board: Found an unoccupied source at (%d, %d) with one valid edge (Guaranteed move).\n", r, c);
+                        return false;
+                    }
+
+                    // If there's more than 1 matching edge, board is incorrect. If there is exactly, one, then there's a guaranteed move
+                    if (matchingEdges > 0){
+                        print_board(board);
+                        printf("Inconsistent board: Found an unoccupied source at (%d, %d) with %d matching edges (%s).\n", r, c, matchingEdges, matchingEdges == 1 ? "Guaranteed Move" : "Incorrect board");
+                        return false;
+                    }
+
+                    // If there is an occupied edge it's a guaranteed move.
+                    if (occupiedEdges != 0) {
+                        print_board(board);
+                        printf("Inconsistent board: Found an unoccupied source at (%d, %d) with an occupied edge (%s).\n", r, c, occupiedEdges == 1 ? "Guaranteed Move" : "Incorrect board");
+                        return false;
+                    }
+                } else {
+                    // Make sure there are more than 2 available edges
+                    if (availableEdges < 3){
+                        print_board(board);
+                        printf("Inconsistent board: Found an unoccupied cell at (%d, %d) with %d < 3 available edges (%s).\n", r, c, availableEdges, availableEdges == 2 ? "Guaranteed Move" : "Incorrect Board");
+                        return false;
+                    }
+
+                    // Make sure there are less than 1 occupied edge
+                    if (occupiedEdges > 1){
+                        print_board(board);
+                        printf("Inconsistent board: Found an unoccupied cell at (%d, %d) with %d occupied edges (%s).\n", r, c, occupiedEdges, occupiedEdges == 2 ? "Guaranteed Move" : "Incorrect Board");
+                        return false;
+                    }
+
+                    if (cell.node.col == EMPTY) {
+                        int coloredEdges =  (cell.edges.n && (nCell.node.col != EMPTY) && nCell.node.isOccupied) + 
+                                            (cell.edges.e && (eCell.node.col != EMPTY) && eCell.node.isOccupied) + 
+                                            (cell.edges.s && (sCell.node.col != EMPTY) && sCell.node.isOccupied) + 
+                                            (cell.edges.w && (wCell.node.col != EMPTY) && wCell.node.isOccupied);
+
+                        // Make sure no occupied edges have a color
+                        if (coloredEdges != 0){
+                            print_board(board);
+                            printf("Inconsistent board: Found an unoccupied cell at (%d, %d) with %d colored occupied edges (Guaranteed Move).\n", r, c, coloredEdges);
+                            return false;
+                        }
+                    } else {
+                        int matchingEdges = (cell.edges.n && (nCell.node.col == cell.node.col)) + 
+                                            (cell.edges.e && (eCell.node.col == cell.node.col)) + 
+                                            (cell.edges.s && (sCell.node.col == cell.node.col)) + 
+                                            (cell.edges.w && (wCell.node.col == cell.node.col));
+
+                        // Make sure there's not multiple matching edges
+                        if (matchingEdges > 1){
+                            print_board(board);
+                            printf("Inconsistent board: Found an unoccupied cell at (%d, %d) with %d matching colored edges (%s).\n", r, c, matchingEdges, matchingEdges == 2 ? "Guaranteed Move" : "Incorrect board");
+                            return false;
+                        }
+
+                        int emptyEdges =    (cell.edges.n && (nCell.node.col == EMPTY)) + 
+                                            (cell.edges.e && (eCell.node.col == EMPTY)) + 
+                                            (cell.edges.s && (sCell.node.col == EMPTY)) + 
+                                            (cell.edges.w && (wCell.node.col == EMPTY));
+                        
+                        // If there's one empty edge and no matching edges, there's a guaranteed move
+                        if (emptyEdges == 1 && matchingEdges == 0){
+                            print_board(board);
+                            printf("Inconsistent board: Found an unoccupied cell at (%d, %d) with one open neighbor (Guaranteed Move).\n", r, c);
+                            return false;
+                        }
+
+                        // All occupied edges should color match
+                        if ((cell.edges.n && (nCell.node.col != cell.node.col) && nCell.node.isOccupied) ||
+                            (cell.edges.e && (eCell.node.col != cell.node.col) && eCell.node.isOccupied) ||
+                            (cell.edges.s && (sCell.node.col != cell.node.col) && sCell.node.isOccupied) ||
+                            (cell.edges.w && (wCell.node.col != cell.node.col) && wCell.node.isOccupied) ){
+                            
+                            print_board(board);
+                            printf("Inconsistent board: Found an unoccupied cell at (%d, %d) with miscolored occupied cell (Incorrect board).\n", r, c);
+                            return false;
+                            
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return true;
 }

@@ -1,468 +1,294 @@
 #include "board.h"
 
-// TODO: Make faster operations that do not require going thru the node type
-// TODO: Finsh the pretty print board function
-// TODO: Add board_location_t functions for getting the 
-//       row/col or the index from a location (in progress)
-// TODO: Remove sanity checks in non-debug mode. In general, I want to assume
-//       that I'm not passing in bad values, so there's no point in double
-//       checking them. It also let's me choose to not define certain behavior (W)
-
-const board_location_t NO_LOC = {-1, 0};
-const board_node_t INVALID_NODE = {-16, 0, 0, 0, 0, -16};
-
-//////////////////////////////////
-// Functions for source indices //
-//////////////////////////////////
-
-/*
-    Returns the start source for a given color
-    Must always return the same source 
-*/
-board_location_t get_start_source(board_t* board, enum COLOR col){
-    return board->sources[2 * col];
+// Function for converting r, c to offset
+key get_index(int width, int r, int c) {
+    return r * width + c;
 }
 
-board_location_t get_end_source(board_t* board, enum COLOR col){
-    return board->sources[2 * col + 1];
+// Makes a set
+void make_set(board_t* board, int r, int c){
+    int ind = get_index(board->width, r, c);
+    board->cells[ind].parent = ind;
+    board->cells[ind].tail = ind;
+    board->cells[ind].size = 1;
 }
 
-void update_source(board_t* board, enum COLOR col, bool is_start, board_location_t new_loc){
-    board->sources[2 * col + 1 - is_start] = new_loc;
-}
+// How many entries to flatten on a get parent call (Prolly won't have to be more than 4)
+#define FLATTEN_SIZE 4
 
-
-////////////////////////////////////
-// Functions for board_location_t //
-////////////////////////////////////
-
-
-/*
-    Returns the x coord of the given location
-*/
-int get_loc_col(board_location_t loc){
-    return loc.index % loc.width;
-}
-
-/*
-    Returns the y coord of the given location
-*/
-int get_loc_row(board_location_t loc){
-    return loc.index / loc.width ;
-}
-
-/*
-    Returns the row-major index of the given location
-*/
-int get_loc_index(board_location_t loc){
-    return loc.index;
-}
-
-/*
-    Checks if the given board_location is valid
-*/
-bool loc_is_valid(board_location_t loc){
-    return loc.width != NO_LOC.width;
-}
-
-bool loc_is_valid_internal(board_t* board, board_location_t loc){
-    if (loc.width == NO_LOC.width) return false;
-    bool ret = loc.index >= 0 && loc.index < board->width * board->height;
-    //if (!ret) printf("tried %d", get_loc_index(loc));
-    return ret;
-}
-
-/*
-    Given a board type and a coordinate, return the corresponding board_location_t
-
-    Notes: Using board_t for width/height. x and y are from top left. In debug mode,
-    this will catch issues where the input loc is out of bounds.
-*/
-board_location_t get_loc(board_t* board, int x, int y){
-    #if DEBUG
-        assert(x + board->width * y >= 0);
-        assert(x + board->width * y < board->width * board->height);
-    #endif
-
-    board_location_t loc;
-    loc.index = x + board->width * y;
-    loc.width = board->width;
-
-    return loc;
-}
-
-/*
-    Given a board_location, returns the board_location one spot up
-    Returns NO_LOC if the new position is not on the board
-*/
-board_location_t get_loc_up(board_location_t loc){
-    board_location_t new_loc;
-    new_loc.index = loc.index - loc.width;
-    new_loc.width = loc.width;
-
-    return (loc.index < loc.width) ? NO_LOC : new_loc;
-}
-
-/*
-    Given a board_location, return the board_location one spot down
-    May return results off of the board!
-*/
-board_location_t get_loc_down(board_location_t loc){
-    board_location_t new_loc;
-    new_loc.index = loc.index + loc.width;
-    new_loc.width = loc.width;
-
-    return new_loc;
-}
-
-/*
-    Given a board_location, returns the board_location one spot left
-    Returns NO_LOC if the new position is not on the board
-*/
-board_location_t get_loc_left(board_location_t loc){
-    board_location_t new_loc;
-    new_loc.index = loc.index - 1;
-    new_loc.width = loc.width;
-
-    // Wrapped from 0 to something
-    return ((loc.index % loc.width) < 1) ? NO_LOC : new_loc;
-}
-
-/*
-    Given a board and a board_location return the board_location one spot right
-    Returns NO_LOC if the new position is not on the board
-*/
-board_location_t get_loc_right(board_location_t loc){
-    board_location_t new_loc;
-    new_loc.index = loc.index + 1;
-    new_loc.width = loc.width;
+// Finds rep loc of the given location
+key get_parent(board_t* board, key currInd){
+    key* update = malloc(sizeof(key) * FLATTEN_SIZE);
+    int ind = 0;
     
-    // Wrapped from something to 0
-    return (new_loc.index % loc.width < 1) ? NO_LOC : new_loc;
-}
-
-bool is_loc_corner(board_t* board, board_location_t loc){
-    return  (get_loc_row(loc) == 0 || get_loc_row(loc) == board->height - 1) && \
-            (get_loc_col(loc) == 0 || get_loc_col(loc) == board->width - 1);
-}
-
-bool locs_are_equal(board_location_t a, board_location_t b){
-    return a.index == b.index;
-}
-
-////////////////////////////////
-// Functions for board_node_t //
-////////////////////////////////
-
-enum COLOR get_node_color(board_node_t* node){
-    return node->color;
-}
-
-bool get_node_up_edge(board_node_t* node){
-    return node->up;
-}
-
-bool get_node_down_edge(board_node_t* node){
-    return node->down;
-}
-
-bool get_node_left_edge(board_node_t* node){
-    return node->left;
-}
-
-bool get_node_right_edge(board_node_t* node){
-    return node->right;
-}
-
-enum COLOR node_guaranteed(board_node_t* node){
-    return node->guaranteed_space;
-}
-
-bool node_is_invalid(board_node_t* node){
-    return node == &INVALID_NODE;
-    // return  node.color == INVALID_NODE.color &&
-    //         node.up == INVALID_NODE.up &&
-    //         node.down == INVALID_NODE.down &&
-    //         node.left == INVALID_NODE.left &&
-    //         node.right == INVALID_NODE.right &&
-    //         node.guaranteed_space == INVALID_NODE.guaranteed_space;
-}
-
-void set_node_color(board_t* board, board_location_t loc, enum COLOR col){
-    #if DEBUG
-        assert(loc_is_valid_internal(board, loc));
-    #endif
-    board->nodes[loc.index].color = col;
-}
-
-void set_node_up_edge(board_t* board, board_location_t loc, bool new_val){
-    #if DEBUG
-        assert(loc_is_valid_internal(board, loc));
-    #endif
-    board->nodes[loc.index].up = new_val;
-}
-
-void set_node_down_edge(board_t* board, board_location_t loc, bool new_val){
-    #if DEBUG
-        assert(loc_is_valid_internal(board, loc));
-    #endif
-    board->nodes[loc.index].down = new_val;
-}
-
-void set_node_left_edge(board_t* board, board_location_t loc, bool new_val){
-    #if DEBUG
-        assert(loc_is_valid_internal(board, loc));
-    #endif
-    board->nodes[loc.index].left = new_val;
-}
-
-void set_node_right_edge(board_t* board, board_location_t loc, bool new_val){
-    #if DEBUG
-        assert(loc_is_valid_internal(board, loc));
-    #endif
-    board->nodes[loc.index].right = new_val;
-}
-
-/*
- * Marks a node as a guaranteed space. Returns false if the guaranteed space
- * is not EMPTY or col
- */
-bool set_node_guaranteed(board_t* board, enum COLOR col, board_location_t loc){
-    #if DEBUG
-        assert(loc_is_valid_internal(board, loc));
-    #endif
-
-    int index = get_loc_index(loc);
-    bool ret =  board->nodes[index].guaranteed_space == EMPTY || 
-                board->nodes[index].guaranteed_space == col;
-    board->nodes[index].guaranteed_space = col;
-    return ret;
-}
-
-
-///////////////////////////
-// Functions for board_t //
-///////////////////////////
-
-// Functions for getting nodes
-
-/* 
-    Returns the board_node given a board_location_t
-*/
-board_node_t* get_node_at_loc(board_t* board, board_location_t loc){
-    #if DEBUG
-        assert(loc_is_valid_internal(board, loc));
-    #endif
-    
-    return loc_is_valid_internal(board, loc) ? \
-        &(board->nodes[get_loc_index(loc)]) : (board_node_t*) &INVALID_NODE;
-}
-
-/*
-    Returns the board_node one spot up. Returns NULL if there is no node
-*/
-board_node_t* get_node_up(board_t* board, board_location_t loc){
-    #if DEBUG
-        assert(loc_is_valid_internal(board, loc));
-    #endif
-    board_location_t up = get_loc_up(loc);
-    
-    return loc_is_valid(up) ? \
-        get_node_at_loc(board, up) : (board_node_t*) &INVALID_NODE;
-}
-
-/*
-    Returns the board_node one spot down. Returns NULL if there is no node
-*/
-board_node_t* get_node_down(board_t* board, board_location_t loc){
-    #if DEBUG
-        assert(loc_is_valid_internal(board, loc));
-    #endif
-    board_location_t down = get_loc_down(loc);
-    
-    return loc_is_valid_internal(board, down) ? \
-        get_node_at_loc(board, get_loc_down(loc)) : (board_node_t*) &INVALID_NODE;
-}
-
-/*
-    Returns the board_node one spot left. Returns NULL if there is no node
-*/
-board_node_t* get_node_left(board_t* board, board_location_t loc){
-    #if DEBUG
-        assert(loc_is_valid_internal(board, loc));
-    #endif
-    board_location_t left = get_loc_left(loc);
-    return loc_is_valid(left) ? \
-        get_node_at_loc(board, get_loc_left(loc)) : (board_node_t*) &INVALID_NODE;
-}
-
-/*
-    Returns the board_node one spot right. Returns NULL if there is no node
-*/
-board_node_t* get_node_right(board_t* board, board_location_t loc){
-    #if DEBUG
-        assert(loc_is_valid_internal(board, loc));
-    #endif
-    board_location_t right = get_loc_right(loc);
-
-    return loc_is_valid(right) ? \
-        get_node_at_loc(board, get_loc_right(loc)) : (board_node_t*) &INVALID_NODE;
-}
-
-// Functions for modifying nodes
-
-// TODO: Add function for adding edges to nodes
-
-/*
-    Remove all edges into the node.
-
-    Notes: In debug mode, checks if loc is valid
-*/
-void remove_edges_into_node(board_t* board, board_location_t loc){
-    #if DEBUG
-        assert(loc_is_valid(loc));
-    #endif
-    
-    board_location_t up = get_loc_up(loc);
-    if (loc_is_valid_internal(board, up)){
-        set_node_down_edge(board, up, false);
+    while(board->cells[currInd].parent != currInd){
+        // printf("%d\n", currInd);
+        update[(ind++) % FLATTEN_SIZE] = currInd;
+        currInd = board->cells[currInd].parent;
     }
 
-    board_location_t down = get_loc_down(loc);
-    if (loc_is_valid_internal(board, down)){
-        set_node_up_edge(board, down, false);
+    // update all to parent
+    for (int i = 0; i < ((ind < FLATTEN_SIZE) ? ind : FLATTEN_SIZE); i++){
+        // printf("update[%d] = %d\n", i, update[i]);
+        board->cells[update[i]].parent = currInd;
     }
+    free(update);
 
-    board_location_t left = get_loc_left(loc);
-    if (loc_is_valid_internal(board, left)){
-        set_node_right_edge(board, left, false);
-    }
-
-    board_location_t right = get_loc_right(loc);
-    if (loc_is_valid_internal(board, right)){
-        set_node_left_edge(board, right, false);
-    }
+    return currInd;
 }
 
-/*
- * Add a source node at loc of color col
- */
-void add_source_node(board_t* board, enum COLOR col, board_location_t loc){
-    // Sources array initalized to contain indexes alternating -1 and 0 (and set board width)
-    // Using col, we get the position in the array. If the index is -1, we know to
-    // move to the next one 
+// returns new parent key
+key swap_set(board_t* board, key parentInd) {
+    #if DEBUG
+        // Ensure this is the parent of the set
+        assert(get_parent(board, parentInd) == parentInd);
+       
+    #endif
 
-    board_node_t* curr = get_node_at_loc(board, loc);
+    key tailInd = board->cells[parentInd].tail;
+
+    board->cells[parentInd].parent = tailInd;
+    board->cells[tailInd].tail = parentInd;
+    board->cells[tailInd].parent = tailInd;
+    board->cells[tailInd].size = board->cells[parentInd].size;
+
+    return tailInd;
+}
+
+// Combines two sets into one
+void board_union(board_t* board, key loc1Ind, key loc2Ind) {
+    // Check that indices are safe
+    #if DEBUG
+        assert(0 <= loc1Ind && loc1Ind < board->height * board->width);
+        assert(0 <= loc2Ind && loc2Ind < board->height * board->width);
+    #endif
     
-    // board_location.index has 9 bits, -1 = 2^9 - 1 = 512 - 1 = 511
-    int offset = ((board->sources[2 * col].index) == 511) ? 0 : 1;
-    board->sources[2 * col + offset].index = loc.index;
+    // Get parents and tails of each set
+    key set1parent = get_parent(board, loc1Ind);
+    key set2parent = get_parent(board, loc2Ind);
 
-    set_node_color(board, loc, col);
+    key set1tail = board->cells[set1parent].tail;
+    key set2tail = board->cells[set2parent].tail;
 
-    // Remove all edges into the node
-    remove_edges_into_node(board, loc);
-}
+    // Should always be combining by connecting a parent or a tail
+    #if DEBUG
+        assert(loc1Ind == set1parent || loc1Ind == set1tail);
+        assert(loc2Ind == set2parent || loc2Ind == set2tail);
+    #endif
 
-/*
-    Creates a board from a compact board
-*/
-void create_board(unsolved_board_t b, board_t* board){
-    board->width = b.width;
-    board->height = b.height;
-    board->n = b.n;
+    // Not sure if this is necessary
+    boardset_t* loc1 = board->cells + set1parent;
+    boardset_t* loc2 = board->cells + set2parent;
+    
+    // Check that both locs are sets and unique
+    #if DEBUG
+        assert(loc1->size > 0 && loc2->size > 0);
+        assert(loc1 != loc2);
+    #endif
 
-    board->nodes = malloc(sizeof(board_node_t) * b.width * b.height);
+    key repParent;
+    key nonRepParent;
+    
+    // TODO: xor this ?
+    // Figure out which side becomes parent
+    if (loc1->cell.isSource){
+        if (loc2->cell.isSource){
+            // Check that both are the same color
+            #if DEBUG
+                bool cond = h_get(board->sources, set1parent) == h_get(board->sources, set2parent);
+                if (!cond){
+                    printf("Col1: %d, col2: %d\n", h_get(board->sources, set1parent), h_get(board->sources, set2parent));
+                    print_board(board);
+                    print_parents(board);
+                }
+                assert(cond);
+            #endif
 
-    // Make nodes and add walls
-    for (int j = 0; j < b.height; j++){
-        for (int i = 0; i < b.width; i++){
-            board_node_t* curr = &board->nodes[j * b.width + i];
-            curr->color = EMPTY;
-            curr->up = j == 0 ? false : true;
-            curr->down = j == (b.height - 1) ? false : true;
-            curr->left = i == 0 ? false : true;
-            curr->right = i == (b.width - 1) ? false : true;
-            curr->guaranteed_space = EMPTY;
+            // Now ensure that 
+
+            // Determine based off size
+            if (loc1->size > loc2->size){
+                // // l1 bigger, so add l2 to l1
+                // loc2->parent = loc1Ind;
+                // loc1->size = loc1->size + loc2->size;
+                repParent = set1parent;
+                nonRepParent = set2parent;
+            } else {
+                // // l2 bigger, so add l1 to l2
+                // loc1->parent = loc2Ind;
+                // loc2->size = loc2->size + loc1->size;
+                repParent = set1parent;
+                nonRepParent = set2parent;
+            }
+        } else {
+            // // Add l2 to l1
+            // loc2->parent = loc1Ind;
+            // loc1->size = loc1->size + loc2->size;
+            repParent = set1parent;
+            nonRepParent = set2parent;
+        }
+    } else {
+        if (loc2->cell.isSource){
+            // // Add l1 to l2
+            // loc1->parent = loc2Ind;
+            // loc2->size = loc2->size + loc1->size;
+            repParent = set2parent;
+            nonRepParent = set1parent;
+        } else {
+            // Neither are sources - choose just by size
+            if (loc1->size > loc2->size){
+                    // // l1 bigger, so add l2 to l1
+                    // loc2->parent = loc1Ind;
+                    // loc1->size = loc1->size + loc2->size;
+                    repParent = set1parent;
+                    nonRepParent = set2parent;
+            } else {
+                // // l2 bigger, so add l1 to l2
+                // loc1->parent = loc2Ind;
+                // loc2->size = loc2->size + loc1->size;
+                repParent = set2parent;
+                nonRepParent = set1parent;
+            }
         }
     }
 
-    board->sources = malloc(sizeof(board_location_t) * b.n * 2);
+    // I know which set to add to the other
+    // Now I need to know how these are connected
+    if (loc1Ind == set1parent){
+        if (loc2Ind == set2parent) {
+            // Adding parent to parent - will need to reverse one
+            repParent = swap_set(board, repParent);
+            board->cells[nonRepParent].parent = repParent;
+            board->cells[repParent].tail = board->cells[nonRepParent].tail;
+        } else {
+            // Adding loc1 parent to loc2 tail
 
-    // Mark every other source as unused 
-    for (int i = 0; i < b.n; i++){
-        board->sources[2 * i].index = -1;
-        board->sources[2 * i].width = b.width;
-        board->sources[2 * i + 1].index = 0;
-        board->sources[2 * i + 1].width = b.width;
-    }
+            // Case 2
+            if (loc1Ind == repParent){
+                repParent = swap_set(board, repParent);
+                board->cells[nonRepParent].parent = repParent;
+                board->cells[repParent].tail = nonRepParent;
+            // Case 1 
+            } else {
+                board->cells[nonRepParent].parent = repParent;
+                board->cells[repParent].tail = board->cells[nonRepParent].tail;
+            }
+        }
+    } else {
+        if (loc2Ind == set2parent) {
+            // Adding loc1 tail to loc2 parent
+            
+            // Case 2
+            if (loc2Ind == repParent){
+                repParent = swap_set(board, repParent);
+                board->cells[nonRepParent].parent = repParent;
+                board->cells[repParent].tail = nonRepParent;
+            
+            // Case 1
+            } else {
+                board->cells[nonRepParent].parent = repParent;
+                board->cells[repParent].tail = board->cells[nonRepParent].tail;
+            }
 
-    // Add more walls here lmao
-    
-
-    // Add source nodes
-    for (int i = 0; i < b.n; i++){
-        int y1 = b.positions[4 * i];
-        int x1 = b.positions[4 * i + 1];
-        int y2 = b.positions[4 * i + 2];
-        int x2 = b.positions[4 * i + 3];
-
-
-        add_source_node(board, i, get_loc(board, x1, y1));
-        add_source_node(board, i, get_loc(board, x2, y2));
+        } else {
+            // Adding tail to tail - will need to reverse one
+            board->cells[nonRepParent].parent = repParent;
+            board->cells[repParent].tail = nonRepParent;
+        } 
     }
 }
 
-void destroy_board(board_t* board){
-    free(board->nodes);
-    free(board->sources);
+// Retrieves cell state from the board
+cellstate_t get_cell(board_t* board, int r, int c){
+    cellstate_t cs;
+    int ind = get_index(board->width, r, c);
+    cs.node = board->cells[ind].cell;
+
+    // If it's empty, double check parent
+    if (cs.node.col == EMPTY && cs.node.isOccupied == true){
+        key parentInd = get_parent(board, ind);
+        enum COLOR parentCol = board->cells[parentInd].cell.col;
+        board->cells[ind].cell.col = parentCol;
+        cs.node.col = parentCol;
+    }
+
+    // T-shaped access pattern
+    cs.edges.n = bitmap_get(board->edges, c + 1, 2 * r);
+    cs.edges.e = bitmap_get(board->edges, c + 1, 2 * r + 1);
+    cs.edges.s = bitmap_get(board->edges, c + 1, 2 * r + 2);
+    cs.edges.w = bitmap_get(board->edges, c, 2 * r + 1);
+
+    return cs;
+}
+
+// TODO: allocate board in one contiguous chunk
+
+// Creates a board from an unsolved board
+board_t* create_board(unsolved_board_t b) {
+    // Extract struct values
+    int w = b.width;
+    int h = b.height;
+    int n = b.n;
+
+    // Allocate space for board
+    board_t* board = malloc(sizeof(board_t));
+    board->height = h;
+    board->width = w;
+    board->n = n;
+    
+    // Allocate space for data
+    board->cells = calloc(h * w, sizeof(boardset_t));
+    
+    // Create edge bitmap
+    board->edges = bitmap_create(w + 1, 2 * h + 1);
+    bitmap_initialize(board->edges);
+    
+    // Allocate space for source hash table
+    board->sources = h_create(2 * n);
+
+    // Allocate space for incorrect moves
+    board->incorrect_moves = bitmap_create(6 * w, h);
+
+    // Mark sources as sources
+    for (int i = 0; i < n; i++){
+        int r1 = b.positions[4 * i];
+        int c1 = b.positions[4 * i + 1];
+        int r2 = b.positions[4 * i + 2];
+        int c2 = b.positions[4 * i + 3];
+
+        int s1 = get_index(board->width, r1, c1);
+        int s2 = get_index(board->width, r2, c2);
+
+        // Add to sources hash table
+        h_add(board->sources, s1, i + 1);
+        h_add(board->sources, s2, i + 1);
+
+        // Modify cell state
+        board->cells[s1].cell.isSource = true;
+        board->cells[s1].cell.canAppend = true;
+        board->cells[s1].cell.col = i + 1;
+
+        board->cells[s2].cell.isSource = true;
+        board->cells[s2].cell.canAppend = true;
+        board->cells[s2].cell.col = i + 1;
+    }
+
+    // Maybe I could add valid-corner bitmap? Or just add into CELL somewhere
+    // A source can only have up to 2 corners - never in opposite directions - can I leverage this?
+
+    return board;
+}
+
+// Deletes a board
+void destroy_board(board_t* board) {
+    bitmap_destroy(board->edges);
+    bitmap_destroy(board->incorrect_moves);
+    free(board->cells);
+    h_destroy(board->sources);
     free(board);
 }
 
-/*
- * Copies one board onto another board
-*/
-void copy_board(board_t* src, board_t* dst){
-    dst->height = src->height;
-    dst->width = src->width;
-    dst->n = src->n;
 
-    // copy src nodes to dst
-    for (int i = 0; i < src->width * src->height; i++){
-        dst->nodes[i] = src->nodes[i];
-    }
-
-    // copy the src sources to dst
-    for (int i = 0; i < 2 * src->n; i++){
-        dst->sources[i] = src->sources[i];
-    }
-}
-
-
-/////////////////////////////
-// Miscellaneous Functions //
-/////////////////////////////
-
-bool are_locs_adjacent(board_t* board, board_location_t loc1, board_location_t loc2){ 
-    bool ret;
-    if (get_loc_index(loc1) > get_loc_index(loc2)){ // loc2 is left or up
-        return (get_loc_index(loc2) == (get_loc_index(loc1) - 1) && (get_loc_index(loc1) % board->width != 0)) || (get_loc_index(loc2) == (get_loc_index(loc1) - board->width));
-    } else { // loc2 is right or down (or loc1)
-        return (get_loc_index(loc1) == (get_loc_index(loc2) - 1) && (get_loc_index(loc2) % board->width != 0)) || (get_loc_index(loc1) == (get_loc_index(loc2) - board->width));
-    }
-}
-
-/*
-    Gets the direction to go from loc1 to loc2. Assumes they are adjacent.
-*/
-enum DIRECTION get_dir_between_nodes(board_t* board, board_location_t loc1, board_location_t loc2){
-    #if DEBUG
-        assert(are_locs_adjacent(board, loc1, loc2));
-    #endif
-
-    // fuck it one liner
-    return (get_loc_index(loc1) > get_loc_index(loc2)) ? ((get_loc_index(loc2) == (get_loc_index(loc1) - 1)) ? LEFT : UP) : ((get_loc_index(loc1) == (get_loc_index(loc2) - 1)) ? RIGHT : DOWN);
-}
 /*
     Sets the text color depending on col
     If fg is true, changes text. Otherwise sets highlight
@@ -528,108 +354,339 @@ void reset_text_color(){
     printf("\033[0;37m");
 }
 
-// Print a board as nicely as possible
-void print_board(board_t* board){
-    reset_text_color();
-    printf("╔");
-    for (int i = 0; i < board->width; i++){
-        printf("══");
-    }
-    printf("═╗\n");
-
-    // print nodes
-    for (int j = 0; j < board->height; j++){
-        printf("║");
-        for (int i = 0; i < board->width; i++){
-            board_location_t curr = get_loc(board, i, j);
-            enum COLOR col = get_node_color(get_node_at_loc(board, curr));
-            reset_text_color();
-            set_text_color(col, true);
-            set_text_color(node_guaranteed(get_node_at_loc(board, curr)), false);
-
-            if (col == EMPTY) {
-                printf("  ");
-                continue;
+// Nicely prints a board
+void print_board(board_t* board) {
+    for (int r = 0; r < board->height; r++){
+        for (int c = 0; c < board->width; c++){
+            cellstate_t cell = get_cell(board, r, c);
+            int parent = get_parent(board, get_index(board->width, r, c));
+            char* segment = "  ";
+            
+            // Determine which piece of the line to draw
+            if (cell.node.isOccupied){
+                if (cell.edges.n) {
+                    if (cell.edges.e) {
+                        segment = " ┗";
+                    } else if (cell.edges.w) {
+                        segment = "━┛";
+                    } else if (cell.edges.s){
+                        segment = " ┃";
+                    } else { // North source
+                        segment = "n⏺";
+                    }
+                } else if (cell.edges.e) {
+                    if (cell.edges.w) {
+                        segment = "━━";
+                    } else if (cell.edges.s) {
+                        segment = " ┏";
+                    } else { // East source
+                        segment = "e⏺";
+                    }
+                } else if (cell.edges.w) {
+                    if (cell.edges.s){
+                        segment = "━┓";
+                    } else { // west source
+                        segment = "w⏺";
+                    }
+                } else { // south source
+                    segment = "s⏺";
+                }
+                // Determine line color
+                set_text_color(board->cells[parent].cell.col, true);
             }
             
-            #if BOARD_PRINT_TYPE == 0
-                printf("%2d", col);
-                reset_text_color();
-            #elif BOARD_PRINT_TYPE == 1
-                #define UP_MASK 1
-                #define DOWN_MASK 2
-                #define LEFT_MASK 4
-                #define RIGHT_MASK 8
-
-                // Need to reimplement using a new method. I will check all 4 edges.
-                // There can be 0-2 edges with the same color. Depending on the arrangement,
-                // I will use a switch statement to draw the correct piece
-
-                uint8_t result = 0;
-                if (get_node_color(get_node_up(board, curr)) == col) result |= UP_MASK;
-                if (get_node_color(get_node_down(board, curr)) == col) result |= DOWN_MASK;
-                if (get_node_color(get_node_left(board, curr)) == col) result |= LEFT_MASK;
-                if (get_node_color(get_node_right(board, curr)) == col) result |= RIGHT_MASK;
-
-                switch (result)
-                {
-                case 0: // Lone node
-                
-                // 1 connection - assume start/end sources
-                case UP_MASK:
-                case DOWN_MASK:
-                case RIGHT_MASK:
-                    set_text_color(col, false);
-                    printf(" ⏺");
-                    reset_text_color();
-                break;
-
-                case LEFT_MASK:
-                    set_text_color(col, false);
-                    printf("━⏺");
-                    reset_text_color();
-                break;
-
-                // All possible pairs
-                case UP_MASK | DOWN_MASK:
-                    printf(" ┃");
-                break;
-                case UP_MASK | LEFT_MASK:
-                    printf("━┛");
-                break;
-                case UP_MASK | RIGHT_MASK:
-                    printf(" ┗");
-                break;
-                case DOWN_MASK | LEFT_MASK:
-                    printf("━┓");
-                break;
-                case DOWN_MASK | RIGHT_MASK:
-                    printf(" ┏");
-                break;
-                case LEFT_MASK | RIGHT_MASK:
-                    printf("━━");
-                break;
-
-                // Probably wrong
-                default: 
-                    printf(" ?");
-                break;
-                } 
-            #else
-                printf("Unimplemented\n");
-                break;
-            #endif
+            // Determine which color background should be
+            set_text_color(cell.node.col, false);
+            printf("%s", segment);
             reset_text_color();
         }
-        reset_text_color();
-        printf(" ║\n");
+        printf("\n");
     }
-    reset_text_color();
+    printf("\n");
+}
 
-    // print bottom bar
-    printf("╚");
-    for (int i = 0; i < board->width; i++){
-        printf("══");
+// Various ways to print board info
+void print_edgecount(board_t* board){
+   for (int r = 0; r < board->height; r++){
+        for (int c = 0; c < board->width; c++){
+            cellstate_t cell = get_cell(board, r, c);
+            printf("%d", cell.edges.n + cell.edges.s + cell.edges.e + cell.edges.w);
+        }
+        printf("\n");
     }
-    printf("═╝\n");
+    printf("\n");
+}
+void print_sourcemap(board_t* board){
+   for (int r = 0; r < board->height; r++){
+        for (int c = 0; c < board->width; c++){
+            cellstate_t cell = get_cell(board, r, c);
+            printf("%d", cell.node.isSource);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+void print_parents(board_t* board){
+   for (int r = 0; r < board->height; r++){
+        for (int c = 0; c < board->width; c++){
+            int ind = get_index(board->width, r, c);
+            if (board->cells[ind].cell.isOccupied){
+                // printf("%2d ", board->cells[ind].parent);
+                printf("(%2d, %2d) ", board->cells[ind].parent, board->cells[ind].tail);
+                // printf("%2d ", get_parent(board, ind));
+            } else printf("         ");
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
+
+// Modifies board by performing move
+// Returns false if an error occurs.
+void perform_move(board_t* board, move_t move) {
+    // Destruct
+    int r = move.r;
+    int c = move.c;
+    int w = board->width;
+
+    // Remove any edges that are not from or to?
+    if (move.from != NORTH && move.to != NORTH){
+        bitmap_set(board->edges, c + 1, 2 * r, 0);
+    }
+    if (move.from != SOUTH && move.to != SOUTH){
+        bitmap_set(board->edges, c + 1, 2 * r + 2, 0);
+    }
+    if (move.from != EAST && move.to != EAST){
+        bitmap_set(board->edges, c + 1, 2 * r + 1, 0);
+    }
+    if (move.from != WEST && move.to != WEST){
+        bitmap_set(board->edges, c, 2 * r + 1, 0);
+    }
+
+    // Mark the current node as occupied
+    int ind = get_index(w, r, c);
+    board->cells[ind].cell.isOccupied = true;
+
+    // Create a set for this point
+    make_set(board, r, c);
+
+    int fromInd;
+    // Get toInd index
+    switch (move.from) {
+        case NORTH:
+            fromInd = ind - w;
+            break;
+        case SOUTH:
+            fromInd = ind + w;
+            break;
+        case EAST:
+            fromInd = ind + 1;
+            break;
+        case WEST:
+            fromInd = ind - 1;
+            break;
+    }
+
+    // Combines sets when applicable
+    board->cells[fromInd].cell.canAppend = true;
+    if (board->cells[fromInd].cell.isOccupied) {
+        board_union(board, ind, fromInd);
+    } else if (board->cells[ind].cell.col != EMPTY){
+        board->cells[fromInd].cell.col = board->cells[ind].cell.col;
+    }
+
+    int toInd;
+    // Get toInd index
+    switch (move.to) {
+        case NORTH:
+            toInd = ind - board->width;
+            break;
+        case SOUTH:
+            toInd = ind + board->width;
+            break;
+        case EAST:
+            toInd = ind + 1;
+            break;
+        case WEST:
+            toInd = ind - 1;
+            break;
+    }
+
+    // Prevent sources from double adding
+    if (fromInd != toInd){
+        // Combines sets when applicable
+        board->cells[toInd].cell.canAppend = true;
+        if (board->cells[toInd].cell.isOccupied) {
+            board_union(board, ind, toInd);
+        } else if (board->cells[ind].cell.col != EMPTY){
+            board->cells[toInd].cell.col = board->cells[ind].cell.col;
+        }
+    }
+    
+    // Ensure parent and tail point to same color spaces
+    key parent = get_parent(board, ind);
+    key tail = board->cells[parent].tail;
+
+    // TODO: Optimize getting edges
+    cellstate_t tailCell = get_cell(board, tail / w, tail % w);
+    cellstate_t parentCell = get_cell(board, parent / w, parent % w);
+
+    if (tailCell.edges.n && board->cells[tail - w].cell.col == EMPTY) board->cells[tail - w].cell.col = tailCell.node.col;
+    if (tailCell.edges.e && board->cells[tail + 1].cell.col == EMPTY) board->cells[tail + 1].cell.col = tailCell.node.col;
+    if (tailCell.edges.s && board->cells[tail + w].cell.col == EMPTY) board->cells[tail + w].cell.col = tailCell.node.col;
+    if (tailCell.edges.w && board->cells[tail - 1].cell.col == EMPTY) board->cells[tail - 1].cell.col = tailCell.node.col;
+
+    if (!parentCell.node.isSource){
+        if (parentCell.edges.n && board->cells[parent - w].cell.col == EMPTY) board->cells[parent - w].cell.col = parentCell.node.col;
+        if (parentCell.edges.e && board->cells[parent + 1].cell.col == EMPTY) board->cells[parent + 1].cell.col = parentCell.node.col;
+        if (parentCell.edges.s && board->cells[parent + w].cell.col == EMPTY) board->cells[parent + w].cell.col = parentCell.node.col;
+        if (parentCell.edges.w && board->cells[parent - 1].cell.col == EMPTY) board->cells[parent - 1].cell.col = parentCell.node.col;
+    }
+
+    bool wasEmpty = false;
+    
+    // This is an empty set. Check if pointing to a colored space
+    if (parentCell.node.col == EMPTY) {
+        wasEmpty = true;
+        if (parentCell.edges.n && !board->cells[parent - w].cell.isOccupied) board->cells[parent].cell.col = board->cells[parent - w].cell.col;
+        if (parentCell.edges.e && !board->cells[parent + 1].cell.isOccupied) board->cells[parent].cell.col = board->cells[parent + 1].cell.col;
+        if (parentCell.edges.s && !board->cells[parent + w].cell.isOccupied) board->cells[parent].cell.col = board->cells[parent + w].cell.col;
+        if (parentCell.edges.w && !board->cells[parent - 1].cell.isOccupied) board->cells[parent].cell.col = board->cells[parent - 1].cell.col;
+    }
+    
+    // if still empty, check tail
+    if (parentCell.node.col == EMPTY) {
+        if (tailCell.edges.n && !board->cells[tail - w].cell.isOccupied) board->cells[parent].cell.col = board->cells[tail - w].cell.col;
+        if (tailCell.edges.e && !board->cells[tail + 1].cell.isOccupied) board->cells[parent].cell.col = board->cells[tail + 1].cell.col;
+        if (tailCell.edges.s && !board->cells[tail + w].cell.isOccupied) board->cells[parent].cell.col = board->cells[tail + w].cell.col;
+        if (tailCell.edges.w && !board->cells[tail - 1].cell.isOccupied) board->cells[parent].cell.col = board->cells[tail - 1].cell.col;
+    }
+
+    // The set was pointing to
+    if (wasEmpty && board->cells[parent].cell.col != EMPTY) {
+
+    }
+}
+
+void copy_board(board_t* old, board_t* new) {
+    // Extract struct values
+    int w = old->width;
+    int h = old->height;
+    int n = old->n;
+
+    new->height = h;
+    new->width = w;
+    new->n = n;
+
+    // Allocate space for data (no calloc since we overwrite)
+    new->cells = malloc(h * w * sizeof(boardset_t));
+    
+    // Create edge bitmap
+    new->edges = bitmap_create(w + 1, 2 * h + 1);
+    
+    // Allocate space for source hash table
+    new->sources = h_create(2 * n);
+
+    // Allocate space for incorrect moves
+    new->incorrect_moves = bitmap_create(6 * w, h);
+
+    // Mark sources as sources
+    for (int i = 0; i < 2 * n; i++){
+        key s1 = old->sources->keys[i];
+        item i1 = old->sources->items[i];
+        
+        // Add to sources hash table
+        h_add(new->sources, s1, i1);
+
+        // Modify cell state
+        new->cells[s1].cell.isSource = true;
+        new->cells[s1].cell.canAppend = true;
+        new->cells[s1].cell.col = i + 1;
+    }
+
+    // Set edges
+    for (int r = 0; r < 2 * h + 1; r++){
+        for (int c = 0; c < w + 1; c++){
+            bitmap_set(new->edges, c, r, bitmap_get(old->edges, c, r));
+        }
+    }
+
+    // Set sources
+    for (int r = 0; r < h; r++){
+        for (int c = 0; c < w; c++){
+            boardset_t* new_cell = new->cells + get_index(w, r, c);
+            boardset_t* old_cell = old->cells + get_index(w, r, c);
+            *new_cell = *old_cell;
+        }
+    }
+
+    // Set incorrect moves
+    for (int r = 0; r < h; r++){
+        for (int c = 0; c < 6 * w; c++){
+            bitmap_set(new->incorrect_moves, c, r, bitmap_get(old->incorrect_moves, c, r));
+        }
+    }
+
+    #if DEBUG
+        assert(new->width == old->width);
+        assert(new->height == old->height);
+        assert(new->n == old->n);
+        
+        // Not the most efficient way of checking equality, but it's realistic
+        for (int r = 0; r < h; r++){
+            for (int c = 0; c < w; c++){
+                cellstate_t old_cell = get_cell(old, r, c);
+                cellstate_t new_cell = get_cell(new, r, c);
+
+                // Check edges
+                assert(old_cell.edges.n == new_cell.edges.n);
+                assert(old_cell.edges.e == new_cell.edges.e);
+                assert(old_cell.edges.s == new_cell.edges.s);
+                assert(old_cell.edges.w == new_cell.edges.w);
+
+                // Check node
+                assert(old_cell.node.canAppend == new_cell.node.canAppend);
+                assert(old_cell.node.col == new_cell.node.col);
+                assert(old_cell.node.isOccupied == new_cell.node.isOccupied);
+                assert(old_cell.node.isSource == new_cell.node.isSource);
+            }
+        }
+    #endif
+}
+
+int get_move_hash(move_t move) {
+    // Calculate the offset
+    bool n = move.from == NORTH || move.to == NORTH;
+    bool e = move.from == EAST || move.to == EAST;
+    bool s = move.from == SOUTH || move.to == SOUTH;
+    bool w = move.from == WEST || move.to == WEST;
+
+    // Ensures all moves for a given position are distinct.
+    // Sources also end up with different offsets for each direction
+    bool four = n && !w;
+    bool two = (n && w) || (!n & s & !w);
+    bool one = e;
+
+    // turn offset into int in [0, 6)
+    int offset = (four << 2) + (two << 1) + one;
+
+    #if DEBUG
+        assert(0 <= offset && offset < 6);
+    #endif
+
+    return offset;
+}
+
+// Adds a move to the incorrect moves bitmap
+void add_incorrect(board_t* board, move_t move) {
+    int offset = get_move_hash(move);
+    
+    bitmap_set(board->incorrect_moves, 6 * move.c + offset, move.r, 1);
+}
+
+// Checks if a move is incorrect
+bool move_is_incorrect(board_t* board, move_t move) {
+    int offset = get_move_hash(move);
+    return bitmap_get(board->incorrect_moves, 6 * move.c + offset, move.r);
 }

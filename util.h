@@ -15,13 +15,17 @@
 
 /*
     0 - Nothing
-    1 - Unsolved & Solutions
+    1 - Solutions
     2 - In progress
     3 - All steps (a LOT of output)
 */
-#define DISPLAY_TYPE 1
+#define DISPLAY_TYPE 0
 
-enum DIRECTION { UP, DOWN, LEFT, RIGHT };
+// Defines interval in between frame displays, increasing speed. 0 - 10
+#define DISPLAY_SPEED 0
+
+
+enum DIRECTION { NORTH, SOUTH, EAST, WEST };
 
 /*
     Determines the board print type

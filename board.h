@@ -3,117 +3,132 @@
 
 #include "util.h"
 #include "levelpack.h"
+#include "hashtable.h"
+#include "bitmap.h"
 
-enum COLOR {EMPTY = -1, RED = 0, GREEN = 1, BLUE = 2, 
-            YELLOW = 3, ORANGE = 4, CYAN = 5, MAGENTA = 6, 
-            MAROON = 7, PURPLE = 8, WHITE = 9, GREY = 10, 
-            LIME = 11, TAN = 12, INDIGO = 13, AQUA = 14, PINK = 15};
+// TODO: Add invalid?
+enum COLOR {
+    EMPTY, RED, GREEN, BLUE, YELLOW, ORANGE, CYAN, MAGENTA, 
+    MAROON, PURPLE, WHITE, GREY, LIME, TAN, INDIGO, AQUA, PINK
+};
 
-// defines a specific location on the board
-// currently is just the location itself.
-// locations take up 9 bits max (since 400 < 512)
-// So I have 7 bits of free space rn
-// Might as well store some extra data!
-// If I save index and b->width, I can get
-// everything I will potentially need with 2 bytes!
-// Can I store more?
-// Saving b->width requires 5 bytes. I have 2 more
-// Is there any way to store height as well...?
+// For implementing Disjoint Set
+// All cells start with a NULL parent except sources
+// to 'addSet', we just set its parent to itself
+// to union, we check both parents of the sets - if one is the source, it becomes the parent
+// OW, we add the smaller set to the larger one
+// if both are unique sources, we do a color comparison. Combine if the same, otherwise we remove the edges
+// Getting parent/identity is just grabbing the parent (assuming it's not NULL)
 
-// Maybe loc will be simpler. It just uses b->width
-// and the index to store a position. It *can* provide
-// More positions, but will only catch oob when going
-// below 0? It would need to if I want the get_loc_left
-// function to work. Let's do it i guess
-typedef struct __attribute__((packed)) {
-    uint16_t index : 9;
-    uint8_t width : 5;
-    // Extra 2 bits to work with
-} board_location_t;
-
-extern const board_location_t NO_LOC;
-
-// Data that each board stores for each node
-typedef  struct __attribute__((packed)) {
-    enum COLOR color : 5; // 16 colors + Empty
-    bool up : 1;
-    bool down : 1;
-    bool left : 1;
-    bool right : 1;
-    enum COLOR guaranteed_space : 5; // guranteed space
-} board_node_t;
-
-extern const board_node_t INVALID_NODE;
-
+// Holds useful information about the cell
 typedef struct {
-    // An array of all nodes
-    board_node_t* nodes;
-    
-    // The end of each line in the flow
-    board_location_t* sources;
+    bool isSource;              // True if the node is a source cell
+    bool canAppend;             // True if the node is adjacent to an occupied cell
+    bool isOccupied;            // True if there are 1 or 2 edges connect to the cell (and there is a set for this cell)
+    enum COLOR col;             // The color of this node
+} nodestate_t;
 
+// Currently, -1 is invalid
+#define NULL_NODE ((nodestate_t){ 0, 0, 0, -1 })
+
+// Whether each edge can be connected to
+typedef struct {
+    bool n;
+    bool e;
+    bool s;
+    bool w;
+} edgestate_t;
+
+#define NULL_EDGE ((edgestate_t){ 0, 0, 0, 0 })
+
+// Container for cell state
+typedef struct {
+    nodestate_t node;
+    edgestate_t edges;
+} cellstate_t;
+
+#define NULL_CELL ((cellstate_t){ NULL_NODE, NULL_EDGE })
+
+
+/* Modified disjoint set
+ * Have 2 'ends' of the set: parent and tail
+ * Invariants:
+ *  - The parent of all elements in a set should point to the parent of the set (eventually)
+ *  - The tail of the parent should always point to the tail of the set
+ *  - The size of the parent should be the number of elements in the set
+ */ 
+typedef struct {
+    nodestate_t cell;       // Holds information
+    key parent;             // Points to the representative of the set (usually a source node)
+    key tail;               // Points to the tail of the set
+    int size;               // size of this set
+} boardset_t;
+
+// Board is for retrieving cells by implementing a disjoint set
+typedef struct {
+    // Keep track of board info
     int width;
     int height;
     int n;
     
-    // Zobrist hash of the board
-    // zob_key_t z_key;
+    // Holds the cell color and source-ness
+    // will be mn bytes long
+    boardset_t* cells;
+
+    // Create bitmap for edge
+    // It may be worth modifying the bitmap to also use the index instead of rowcol
+    bitmap_t* edges;
+
+    // TODO: Make an actual hash table
+    hashtable_t* sources;
+
+    // Save incorrect moves
+    bitmap_t* incorrect_moves;
 } board_t;
 
-// functions for board sources
-board_location_t get_start_source(board_t* board, enum COLOR col);
-board_location_t get_end_source(board_t* board, enum COLOR col);
-void update_source(board_t* board, enum COLOR col, bool is_start, board_location_t new_loc);
+// Get index from r, c
+key get_index(int width, int r, int c);
 
-// Functions for board_location_t //
-int get_loc_col(board_location_t loc);
-int get_loc_row(board_location_t loc);
-int get_loc_index(board_location_t loc);
-bool loc_is_valid(board_location_t loc);
-board_location_t get_loc(board_t* board, int x, int y);
-board_location_t get_loc_up(board_location_t loc);
-board_location_t get_loc_down(board_location_t loc);
-board_location_t get_loc_left(board_location_t loc);
-board_location_t get_loc_right(board_location_t loc);
-bool is_loc_corner(board_t* board, board_location_t loc);
-bool locs_are_equal(board_location_t a, board_location_t b);
-
-// Functions for board_node_t //
-enum COLOR get_node_color(board_node_t* node);
-bool get_node_up_edge(board_node_t* node);
-bool get_node_down_edge(board_node_t* node);
-bool get_node_left_edge(board_node_t* node);
-bool get_node_right_edge(board_node_t* node);
-enum COLOR node_guaranteed(board_node_t* node);
-bool node_is_invalid(board_node_t* node);
-void set_node_color(board_t* board, board_location_t loc, enum COLOR col);
-void set_node_up_edge(board_t* board, board_location_t loc, bool new_val);
-void set_node_down_edge(board_t* board, board_location_t loc, bool new_val);
-void set_node_left_edge(board_t* board, board_location_t loc, bool new_val);
-void set_node_right_edge(board_t* board, board_location_t loc, bool new_val);
-bool set_node_guaranteed(board_t* board, enum COLOR col, board_location_t loc);
-
-// Functions for board_t //
-// Functions for getting nodes
-board_node_t* get_node_at_loc(board_t* board, board_location_t loc);
-board_node_t* get_node_up(board_t* board, board_location_t loc);
-board_node_t* get_node_down(board_t* board, board_location_t loc);
-board_node_t* get_node_left(board_t* board, board_location_t loc);
-board_node_t* get_node_right(board_t* board, board_location_t loc);
-
-
-// Functions for modifying nodes
-void remove_edges_into_node(board_t* board, board_location_t loc);
-void add_source_node(board_t* board, enum COLOR col, board_location_t loc);
-
-// Creation and deletion
-void create_board(unsolved_board_t b, board_t* board);
+// Initalize/destroy the board
+board_t* create_board(unsolved_board_t b);
 void destroy_board(board_t* board);
-void copy_board(board_t* src, board_t* dest);
 
-// Miscellaneous Functions //
-bool are_locs_adjacent(board_t* board, board_location_t loc1, board_location_t loc2);
-enum DIRECTION get_dir_between_nodes(board_t* board, board_location_t loc1, board_location_t loc2);
+// 'add' a cell to the board at a given row and column (set parent to itself)
+void make_set(board_t*, int r, int c);
+
+// Swaps the parent and tail of a set
+key swap_set(board_t* board, key parentInd);
+
+// Combine two sets into one
+// Should always be either the parent or the tail of their sets
+void board_union(board_t* board, key loc1Ind, key loc2Ind);
+
+// Get the cell at a given position
+cellstate_t get_cell(board_t* board, int r, int c);
+
+// Prints a board
 void print_board(board_t* board);
+
+// Prints edge count at all positions of a board
+void print_edgecount(board_t* board);
+
+// Prints sources on the board
+void print_sourcemap(board_t* board);
+
+// Prints parents
+void print_parents(board_t* board);
+
+#include "move_gen.h"
+
+// Mutates board by performing move
+void perform_move(board_t* board, move_t move);
+
+void copy_board(board_t* old, board_t* new);
+
+// saves an incorrect move to the board 
+void add_incorrect(board_t* board, move_t move);
+
+// Checks if a move is incorrect on board
+bool move_is_incorrect(board_t* board, move_t move);
 
 #endif

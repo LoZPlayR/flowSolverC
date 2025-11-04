@@ -1,202 +1,225 @@
 #include "solver.h"
 
-const int MAX_DEPTH = 9999;
+// TODO: Make logic work/identify bad boards?
+// Maybe make eval step after running a guess step?
 
-// TODO: Add hashing and some sort of caching system for flow boards
-// TODO: Make Solver more organized? Add some more functions
-// TOOD: Only make the boards that will be solved
-
-/*
-    Should solve the unsolved board. Print out the solution
-    Returns the number of frames completed
-*/
-int solve(unsolved_board_t b){
-    position_t* stack = calloc(b.height * b.width, sizeof(position_t));
-    move_t* move_buffer = calloc(b.n * 8, sizeof(move_t));
-
-    // Set up stack 
-    for (int i = 0; i < b.height * b.width; i++){      
-        stack[i].board = NULL;
-        stack[i].num_moves = -1;
-        
-        // Allocate all space for moves
-        stack[i].moves = malloc(sizeof(sortable_move_t) * b.n * 8);
-        
-        // Allocate all boards (will be modified in the future)
-        stack[i].board = malloc(sizeof(board_t));
-        create_board(b, stack[i].board);
-    }
+/// @brief Mutates board by performing all possible guaranteed moves
+/// @param board Board object
+/// @param move_buffer Buffer for storing moves
+/// @return Number of moves performed (-1 if board is invalid)
+int logic_module(board_t* board, move_t* move_buffer){
+    int num_changes = 0;
     
-    // Print the original board
-    #if (DISPLAY_TYPE == 1)
-        print_board(stack[0].board);
-    #endif
-
-    // Prepare for recursion
-    int depth = 0;
-    int count = 0;
-
-    while(true) {
-        count += 1;
+    while (true){
+        // prepare board
+        prune_edges(board); 
+        corner_prune(board);
+    
+        int num_moves = logic_gen_complete(board, move_buffer);
         
-        if (MAX_DEPTH != -1 && count > MAX_DEPTH) break;
-        
-
-        bool board_is_valid = true;
-
-        // Find all guaranteed moves for this frame
-        while(board_is_valid){
-            int guaranteed_found = find_guaranteed_spaces(stack[depth].board);
-            
-            // Found a contradiction - something is wrong
-            if (guaranteed_found == -1){
-                board_is_valid = false;
-            }
-            
-            // All moves found
-            if (guaranteed_found == 0){
-                break;
-            }
-        }
-        
-        // Perform all guaranteed moves for this frame
-        while(board_is_valid){
-            // Use move buffer
-            int found_moves = generate_guaranteed_moves(stack[depth].board, move_buffer);
-            
-            // No more guaranteed moves!
-            if (found_moves == 0){
-                break;
-            }
-            
-            // Perfom the moves
-            for (int i = 0; i < found_moves; i++){
-                // If any guaranteed space is invalid, the entire board is invalid
-                if (!check_dest_edges_valid(stack[depth].board, move_buffer[i])){
-                    board_is_valid = false;
-                    break;
-                }
-                perform_local_move(stack[depth].board, move_buffer[i]);
-            }
-        }
-        
-        // Board is invalid - step back
-        if (!board_is_valid){
-            stack[depth].num_moves = -1;
-            depth--;
-        }
-
-        // Check if the board is full/solved
-        if (is_solved(stack[depth].board)) {
-            // Solved!
-            break;
-        }
-
-        // Generate moves if at new depth. Set up stack frame
-        if (stack[depth].num_moves == -1){
-            #if DEBUG && VERBOSE
-                printf("Went down a level\n");
-            #endif
-            stack[depth].curr = 0;
-            stack[depth].num_moves = generate_moves(stack[depth].board, move_buffer);
-
-            // TODO: Shuffle moves?
-
-            // Evaluate moves
-            // Remove invalid moves from being done
-
-            convert_to_sortable(move_buffer, stack[depth].moves, stack[depth].num_moves);
-            int num_invalid = 0;
-
-            for (int i = 0; i < stack[depth].num_moves; i++){
-                num_invalid += !evaluate_move(stack[depth].board, stack[depth].moves + i);
-            }
-
-            // Sort the entire set of moves - invalid ones should go to end
-            qsort(stack[depth].moves, stack[depth].num_moves, \
-                    sizeof(sortable_move_t), compare_sortable);
-
-            // Remove the moves
-            stack[depth].num_moves -= num_invalid;
-            
-            #if DEBUG
-                printf("Removed %d moves!\n", num_invalid);
-                printf("Generated %d moves at depth %d\n", stack[depth].num_moves, depth);
-                for (int i = 0; i < stack[depth].num_moves; i++){
-                    print_move(&(stack[depth].moves[i].move), stack[depth].board->width);
-                    printf("Value: %f\n", stack[depth].moves[i].value);
-                }
-            #endif
-        }
-
-        // Iterate thru moves until a valid one is found
-        while(true){
-            // Check if we need to move up in the next frame
-            if (stack[depth].curr == stack[depth].num_moves){
-                #if DEBUG
-                    printf("Out of moves! Moving up to level %d...\n", depth);
-                #endif
-                if (depth == 0){
-                    printf("No solution! Or serious error??\n");
-                    return -1;
-                }
-
-                stack[depth].num_moves = -1;
-                depth--;
-                break;
-            // Node has some more moves left - perform the current move
-            } else {
-                #if DEBUG
-                    printf("Performing move (%d)\n", stack[depth].curr);
-                    print_move(&stack[depth].moves[stack[depth].curr].move, stack[depth].board->width);
-                #endif
+        // main loop (for now)
+        while (num_moves){
+            for (int i = 0; i < num_moves; i++){
+                move_t curr_move = move_buffer[i];
                 
-                perform_move(stack[depth].board, stack[depth + 1].board, stack[depth].moves[stack[depth].curr].move);
+                // Ensure the move is valid
+                if (!validate_move(board, curr_move)) return -1;
 
-                #if DISPLAY_TYPE == 2
-                    printf("\e[1;1H\e[2J");
-                #endif
-                #if DISPLAY_TYPE > 1
-                    print_board(stack[depth + 1].board);
-                #endif
+                perform_move(board, curr_move);
+    
+                // Check for correctness
+                if (!validate_area(board, curr_move.r, curr_move.c)) return -1;
+
+                // Spot clean
+                prune_edges_area(board, curr_move.r, curr_move.c);
+                inverse_corner_prune(board, curr_move.r, curr_move.c);
                 
-                stack[depth].curr++;
-
-                // Fast pruning - only check if there are paths available
-                if (is_solvable(stack[depth + 1].board)){
-                    #if DEBUG
-                        printf("Increasing depth\n");
-                    #endif
-                    depth++;
-                    break;
-                }
+                // Check for correctness
+                if (!validate_area(board, curr_move.r, curr_move.c)) return -1;
             }
+    
+            // Clean the whole board
+            // May become unnecessary when I implement spot cleaning @ tails
+            prune_edges(board); 
+            corner_prune(board);
+    
+            // Revalidate entire board
+            if (!valid_edges(board) || !valid_colors(board)) return -1;
+    
+            // continue the loop
+            num_changes += num_moves;
+            num_moves = logic_gen_complete(board, move_buffer);
         }
+
+        int guaranteedCount = guaranteed_spaces(board);
+        if (guaranteedCount == -1) return -1;
+
+        num_changes += guaranteedCount;
+
+        if (guaranteedCount == 0) break;
     }
 
-    // Print solved board
-    #if DISPLAY_TYPE == 1 || DISPLAY_TYPE == 3  
-        print_board(stack[depth].board);
-    #endif
+    // Ensure there's still paths
+    if (!validate_paths(board)) return -1;
 
-    // Clean up everyting
-    for (int i = 0; i < b.height * b.width; i++){
-        free(stack[i].moves);
-        destroy_board(stack[i].board);
-    }
-
-    free(move_buffer);
-    free(stack);
-
-    return count;
+    // last check to ensure board is valid
+    if (!(valid_edges(board) && valid_colors(board))) return -1;
+    return num_changes;
 }
 
+// Tests a move 
+bool test_move(board_t* board, move_t* move){
+    board_t* test = malloc(sizeof(board_t));
+    move_t* buffer = malloc(sizeof(move_t) * board->height * board->width);
 
+    copy_board(board, test);
+    perform_move(test, *move);
+
+    // Attempt logic module
+    int info = logic_module(test, buffer);
+    bool success = !(info == -1);
+
+    move->info = info;
+
+    free(test);
+    free(buffer);
+
+    return success;
+}
+
+int MAX_FRAMES = 0;
+
+int solve(unsolved_board_t b, int num){
+    int frames = 0;
+    int skips = 0;
+    int invalid = 0;
+    position_t* stack = malloc(sizeof(stack_t) * b.height * b.width);
+    
+    // prep stack
+    for (int i = 0; i < b.height * b.width; i++){
+        stack[i].num_moves = -1;
+    }
+
+    int currPosInd = 0;
+    stack[0].board = create_board(b);
+
+    while(currPosInd != -1){
+        position_t* currPos = stack + currPosInd;
+        
+        if (MAX_FRAMES > 0 && frames >= MAX_FRAMES) {
+            break;
+        }
+        if (currPosInd == -1){
+            printf("No solution?\n");
+            break;
+        }
+        
+        #if DISPLAY_TYPE > 1
+            #if DISPLAY_TYPE == 2
+                if (frames % (1 << DISPLAY_SPEED) == 0){
+                    system("clear");
+                    printf("Solving board %d\n", num);
+                    print_board(currPos->board);
+                    printf("Total Moves Skipped: %d\n", skips);
+                    printf("Total boards invalidated: %d\n", invalid);
+                }
+            #else
+                print_board(currPos->board);
+            #endif
+        #endif
+
+        // set up board
+        if (currPos->num_moves == -1){
+            currPos->moves = malloc(b.height * b.width * sizeof(move_t) * 6);
+
+
+            // Do all logical steps. If false, board is invalid & step back
+            // since im pre-running on all child moves, this will never be false
+            if (logic_module(currPos->board, currPos->moves) == -1){
+                free(currPos->moves);
+                destroy_board(currPos->board);
+                currPos->num_moves = -1;
+                currPosInd--;
+                invalid++;
+                continue;
+            }
+
+            #if DEBUG
+                assert(board_consistent(currPos->board));
+            #endif
+
+            // Check if we're done
+            if (is_solved(currPos->board)){
+                #if DISPLAY_TYPE
+                    print_board(currPos->board);
+                #endif
+                printf("Solved!\n");
+                break;
+            }
+            
+            // Generate all possible moves for this layer and don't move down
+            currPos->num_moves = generate_moves_complete(currPos->board, currPos->moves);
+            // Test all moves 1 level.
+            for (int i = 0; i < currPos->num_moves; i++){
+                if (!move_is_incorrect(currPos->board, currPos->moves[i]) &&
+                    !test_move(currPos->board, currPos->moves + i)){
+                    add_incorrect(currPos->board, currPos->moves[i]);
+                    invalid++;
+                }
+            }
+
+            // Now sort all the moves
+            qsort(currPos->moves, currPos->num_moves, sizeof(move_t), compare_moves);
+        } else if (currPos->num_moves == 0){
+            // Out of moves. Reset and go back
+            currPos->num_moves = -1;
+            destroy_board(currPos->board);
+            free(currPos->moves);
+            currPosInd--;
+            invalid++;
+
+            // Set last used move to incorrect
+            if (currPosInd == -1){
+                printf("No solution?\n");
+                break;
+            }
+
+            position_t* t = stack + currPosInd;
+            add_incorrect(t->board, t->moves[t->num_moves]);
+        } else {
+            // Grab move, copy it to next board and increment
+            move_t currMove = currPos->moves[--currPos->num_moves];
+
+            // If move is incorrect, skip it and move to next
+            if (move_is_incorrect(currPos->board, currMove)){
+                skips++;
+                continue;
+            }
+            
+            stack[currPosInd + 1].board = malloc(sizeof(board_t));
+
+            copy_board(currPos->board, stack[currPosInd + 1].board);
+            perform_move(stack[currPosInd + 1].board, currMove);
+            currPosInd += 1;
+        }
+        frames++;
+    }
+    
+    // Destroy stack
+    for (int i = 0; i < currPosInd; i++){
+        destroy_board(stack[i].board);
+        free(stack[i].moves);
+    }
+
+    free(stack);
+
+    printf("Skips: %d\n", skips);
+
+    return frames;
+}
 
 /*  Some notes:
-    The max stack size is the area of the board
-
-    Should prolly move into Windows/linux environment so I can actually debug/ASAN
+ *  The max stack size is the area of the board
  */
 int main(int argc, char **argv){
     printf("Starting Solver\n");
@@ -204,6 +227,7 @@ int main(int argc, char **argv){
     char buf[32];
     char *filename = (char *) buf;
 
+    // CHANGE BACK TO 0 0
     int min_ind = 0;
     int max_ind = 0;
 
@@ -224,14 +248,17 @@ int main(int argc, char **argv){
 
     // Load level
     level_pack_t* lp = malloc(sizeof(level_pack_t));
-    // printf("Loading levelpack\n");
+    
+    printf("Loading levelpack...\n");
     if (!load_level_pack(lp, filename)){
-        // printf("Could not file packs/%s.flow\n", filename);
+        printf("Could not file packs/%s.flow\n", filename);
         return -1;
     }
+
+    printf("Success!\n");
     
     // Free all the int coordinates.
-    // I should just make a destroy function for levelpacks
+    // TODO: I should just make a destroy function for levelpacks
 
     max_ind = (max_ind == 0 || max_ind > lp->num_levels) ? lp->num_levels : max_ind;
 
@@ -243,15 +270,22 @@ int main(int argc, char **argv){
         printf("solving board %d\n", i);
         // Measure time to solve
         start = clock();
-        int frames = solve(lp->levels[i]);
+        int frames = solve(lp->levels[i], i);
         end = clock();
 
         all_data[i].filename = filename;
         all_data[i].level = i;
         all_data[i].time = ((double) (end - start));
+        all_data[i].frames = frames;
 
         printf("Completed level %d in %f seconds. (%d frames)\n", i, ((double) (end - start)) / CLOCKS_PER_SEC, frames);
     }
+    double total_time = 0;
+
+    for (int i = min_ind; i < max_ind; i++){
+        total_time += all_data[i].time;
+    }
+    printf("Completed all levels in %f seconds!\n", total_time / CLOCKS_PER_SEC);
 
     // Free everything
     // A create function couldn't hurt either

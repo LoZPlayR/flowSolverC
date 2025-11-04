@@ -4,3 +4,12 @@ flowsolver
 flowsolver.dSYM/Contents/Info.plist
 flowsolver.dSYM/Contents/Resources/DWARF/flowsolver
 flowsolver
+leveleditor.dSYM/Contents/Resources/DWARF/leveleditor
+92.ansi
+bs
+leveleditor
+*.ansi
+perf.sh
+valgrind-out.txt
+/packs
+/packs

@@ -1,23 +1,24 @@
 #ifndef SOLVER_H
 #define SOLVER_H
 
-#include "gen_moves.h"
+#include "move_gen.h"
 #include "board.h"
 #include "util.h"
-#include "eval.h"
 #include "levelpack.h"
+#include "logic.h"
+#include "eval.h"
 
 typedef struct {
     board_t* board;
-    sortable_move_t* moves;
+    move_t* moves;
     int num_moves;
-    int curr;
 } position_t; 
 
 typedef struct {
     float time;
     char* filename;
     int level;
+    int frames;
 } run_data_t;
 
 int main(int argc, char **argv);
